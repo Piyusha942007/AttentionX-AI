@@ -18,7 +18,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
@@ -35,6 +35,7 @@ from pydantic import BaseModel, HttpUrl
 
 class YouTubeJobRequest(BaseModel):
     url: str
+    caption_color: str = "Yellow"
 
 from worker import process_job
 
@@ -85,6 +86,7 @@ app.add_middleware(
 async def create_job_endpoint(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Video file (MP4/MOV/MKV)"),
+    caption_color: str = Form("Yellow"),
 ):
     """
     Accept a video upload, store it in Supabase, create a job row,
@@ -114,7 +116,7 @@ async def create_job_endpoint(
     )
 
     # 5. Fire background pipeline (non-blocking)
-    background_tasks.add_task(process_job, job_id, str(local_path))
+    background_tasks.add_task(process_job, job_id, str(local_path), youtube_url=None, caption_color=caption_color)
 
     return JobCreateResponse(job_id=job_id, status=JobStatus.queued)
 
@@ -139,7 +141,7 @@ async def create_youtube_job_endpoint(
     )
 
     # 2. Fire background pipeline with the URL
-    background_tasks.add_task(process_job, job_id, video_path=None, youtube_url=url_str)
+    background_tasks.add_task(process_job, job_id, video_path=None, youtube_url=url_str, caption_color=request.caption_color)
 
     return JobCreateResponse(job_id=job_id, status=JobStatus.queued)
 

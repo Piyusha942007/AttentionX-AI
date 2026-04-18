@@ -13,9 +13,13 @@ import logging
 import os
 from pathlib import Path
 
-# Configure MoviePy to use local ffmpeg binary (v2.x compatible)
-BACKEND_DIR = Path(__file__).parent.parent
-FFMPEG_EXE = str(BACKEND_DIR / "ffmpeg.exe")
+# Configure ffmpeg cross-platform (local .exe vs global Linux binary)
+if os.name == "nt":
+    BACKEND_DIR = Path(__file__).parent.parent
+    FFMPEG_EXE = str(BACKEND_DIR / "ffmpeg.exe")
+else:
+    FFMPEG_EXE = "ffmpeg"
+
 os.environ["MOVIEPY_FFMPEG_BINARY"] = FFMPEG_EXE
 
 from moviepy import VideoFileClip

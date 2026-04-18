@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: attentionx-backend
+    env: docker
+    plan: standard # The standard or pro tier is required to accommodate Whisper and MediaPipe RAM footprints. Free tier limits RAM rigidly to 512MB which will trigger immediate Memory Exhaustion crashing the pipeline.
+    region: frankfurt # Choose closest region to users
+    dockerCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      
+      # Python Optimization variables
+      - key: PYTHONUNBUFFERED
+        value: "true"
+      - key: MOVIEPY_FFMPEG_BINARY
+        value: "ffmpeg"

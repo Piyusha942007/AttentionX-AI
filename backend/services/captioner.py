@@ -21,17 +21,27 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-# Absolute path to local ffmpeg binary
-BACKEND_DIR = Path(__file__).parent.parent
-FFMPEG_EXE = str(BACKEND_DIR / "ffmpeg.exe")
+# Configure ffmpeg cross-platform
+if os.name == "nt":
+    BACKEND_DIR = Path(__file__).parent.parent
+    FFMPEG_EXE = str(BACKEND_DIR / "ffmpeg.exe")
+else:
+    FFMPEG_EXE = "ffmpeg"
 
 logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", "./output_clips"))
 
-# ASS subtitle header — PlayResX/Y must match the clip resolution (608×1080)
-_ASS_HEADER = """\
-[Script Info]
+COLOR_MAP = {
+    "Yellow": "&H0034E2FF", # Standard vibrant yellow
+    "Green": "&H0000FF00",  # Bright Green
+    "Cyan": "&H00FFFF00",   # Bright Cyan
+    "Pink": "&H00FF00FF",   # Neon Pink
+}
+
+def get_ass_header(color_name: str) -> str:
+    color_hex = COLOR_MAP.get(color_name, "&H0034E2FF")
+    return f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: 608
 PlayResY: 1080
@@ -39,14 +49,14 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: White,Arial,52,&H00FFFFFF,&H00FFE234,&H00000000,&H96000000,1,0,0,0,100,100,0,0,1,3,1,2,10,10,180,1
-Style: Active,Arial,52,&H00FFE234,&H00FFFFFF,&H00000000,&H96000000,1,0,0,0,105,105,0,0,1,3,1,2,10,10,180,1
+Style: White,Arial,48,&H00FFFFFF,{color_hex},&H00000000,&H96000000,1,0,0,0,100,100,0,0,1,3,1,2,40,40,240,1
+Style: Active,Arial,48,{color_hex},&H00FFFFFF,&H00000000,&H96000000,1,0,0,0,105,105,0,0,1,3,1,2,40,40,240,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
 
-WORDS_PER_LINE = 6   # Group into bite-sized chunks for readability
+WORDS_PER_LINE = 4   # Reduced chunks to fit safely within 9:16 boundaries
 
 
 def _seconds_to_ass_time(t: float) -> str:
@@ -118,10 +128,10 @@ def _build_ass_events(words: list[dict], clip_start: float) -> list[str]:
     return events
 
 
-def _write_ass_file(words: list[dict], clip_start: float) -> str:
+def _write_ass_file(words: list[dict], clip_start: float, caption_color: str) -> str:
     """Write ASS subtitle file to a temp file and return its path."""
     events = _build_ass_events(words, clip_start)
-    ass_content = _ASS_HEADER + "\n".join(events) + "\n"
+    ass_content = get_ass_header(caption_color) + "\n".join(events) + "\n"
 
     tmp = tempfile.NamedTemporaryFile(
         mode="w", suffix=".ass", delete=False, encoding="utf-8"
@@ -137,18 +147,20 @@ def burn_captions(
     words:        list[dict],
     clip_start:   float,
     output_path:  str,
+    caption_color: str = "Yellow",
 ) -> str:
     """
     Burn karaoke-style captions onto a clip using ffmpeg ASS subtitles.
 
-    Active word is highlighted in yellow; sentence context in white.
+    Active word is highlighted depending on the caption_color.
     Falls back to returning the original uncaptioned clip if ffmpeg fails.
 
     Args:
-        clip_path:   Path to the uncaptioned 9:16 MP4.
-        words:       Word-level timestamps [{"word", "start", "end"}].
-        clip_start:  Absolute start time of the clip in the source video.
-        output_path: Path for the captioned output MP4.
+        clip_path:     Path to the uncaptioned 9:16 MP4.
+        words:         Word-level timestamps [{"word", "start", "end"}].
+        clip_start:    Absolute start time of the clip in the source video.
+        output_path:   Path for the captioned output MP4.
+        caption_color: Color string matching the UI.
 
     Returns:
         Path to the captioned clip (or original clip if captioning fails).
@@ -159,7 +171,7 @@ def burn_captions(
 
     ass_path: str | None = None
     try:
-        ass_path = _write_ass_file(words, clip_start)
+        ass_path = _write_ass_file(words, clip_start, caption_color)
         logger.info(f"ASS subtitle file written: {ass_path} ({len(words)} words)")
 
         # FFMpeg's subtitle filter crashes on Windows absolute paths (C:\) because

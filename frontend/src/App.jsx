@@ -40,6 +40,7 @@ export default function App() {
   const [tab, setTab] = useState('file')
   const [file, setFile] = useState(null)
   const [ytUrl, setYtUrl] = useState('')
+  const [captionColor, setCaptionColor] = useState('Yellow')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
 
@@ -84,6 +85,7 @@ export default function App() {
     setUploading(true); setError(null)
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('caption_color', captionColor)
     try {
       const res = await fetch('/api/jobs', { method: 'POST', body: formData })
       if (res.ok) { setJob(await res.json()) } else { setError('Upload failed') }
@@ -94,7 +96,7 @@ export default function App() {
     if (!ytUrl) return
     setUploading(true); setError(null)
     try {
-      const res = await fetch('/api/jobs/youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: ytUrl }) })
+      const res = await fetch('/api/jobs/youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: ytUrl, caption_color: captionColor }) })
       if (res.ok) { setJob(await res.json()) } else { setError('URL processing failed') }
     } catch { setError('Connection error') } finally { setUploading(false) }
   }
@@ -252,12 +254,20 @@ export default function App() {
           { l:"Peak detection", v:"Gemini + Librosa", bg:'#173404', c:'#97C459' },
           { l:"Face tracking", toggle:true },
           { l:"Karaoke captions", toggle:true },
+          { l:"Caption color", select:true },
           { l:"Hook headline", toggle:true },
           { l:"Output format", v:"9:16 TikTok", bg:'#412402', c:'#FAC775' },
         ].map((s,i) => (
           <div key={i} style={S.settingRow}>
             <span style={{ fontSize:12, color:'#71717a' }}>{s.l}</span>
-            {s.toggle ? <Toggle on /> : <span style={S.badge(s.bg, s.c)}>{s.v}</span>}
+            {s.toggle ? <Toggle on /> : s.select ? (
+                <select value={captionColor} onChange={e => setCaptionColor(e.target.value)} disabled={job || uploading} style={{ background:'#18181b', color:'#a1a1aa', border:'0.5px solid #27272a', borderRadius:6, padding:'2px 6px', fontSize:11, outline:'none' }}>
+                    <option value="Yellow">Yellow</option>
+                    <option value="Green">Green</option>
+                    <option value="Cyan">Cyan</option>
+                    <option value="Pink">Neon Pink</option>
+                </select>
+            ) : <span style={S.badge(s.bg, s.c)}>{s.v}</span>}
           </div>
         ))}
       </div>
@@ -381,9 +391,9 @@ export default function App() {
         <div style={{ padding:'0 16px', display:'flex', flexDirection:'column', gap:16, flex:1 }}>
 
           {/* Preview Pair */}
-          <div style={{ display:'flex', gap:8, width:'100%' }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:16, width:'100%', flex:1 }}>
             {/* 16:9 Source */}
-            <div style={{ flex:1, aspectRatio:'16/9', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden' }}>
+            <div style={{ width:'100%', aspectRatio:'16/9', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden', flexShrink:0 }}>
               <div style={{ position:'absolute', left:'25%', top:0, bottom:0, width:'38%', background:'rgba(127,119,221,0.1)', borderLeft:'1px solid #7F77DD', borderRight:'1px solid #7F77DD', zIndex:10 }} />
               
               {sel?.clip_url ? (
@@ -394,13 +404,15 @@ export default function App() {
             </div>
             
             {/* 9:16 Output */}
-            <div style={{ width:76, aspectRatio:'9/16', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden', display:'flex', alignItems:'flex-end', justifyContent:'center', flexShrink:0 }}>
-              
-              {sel?.clip_url ? (
-                  <video src={sel.clip_url} autoPlay loop controls playsInline style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', objectFit:'cover', zIndex:5 }} />
-              ) : null}
+            <div style={{ flex: 1, display:'flex', justifyContent:'center', paddingBottom: 16, overflow:'hidden' }}>
+              <div style={{ height:'100%', aspectRatio:'9/16', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                
+                {sel?.clip_url ? (
+                    <video src={sel.clip_url} autoPlay loop controls playsInline style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', objectFit:'cover', zIndex:5 }} />
+                ) : null}
 
-              <span style={{ position:'absolute', bottom:4, left:4, zIndex:20, fontSize:7, color:'#52525b', background:'#18181b', padding:'1px 4px', borderRadius:3 }}>9:16 Output</span>
+                <span style={{ position:'absolute', bottom:4, left:4, zIndex:20, fontSize:7, color:'#52525b', background:'#18181b', padding:'1px 4px', borderRadius:3 }}>9:16 Output</span>
+              </div>
             </div>
           </div>
 

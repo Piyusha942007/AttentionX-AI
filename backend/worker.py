@@ -35,7 +35,8 @@ async def _run_sync(fn, *args):
 async def process_job(
     job_id: str, 
     video_path: str | None = None, 
-    youtube_url: str | None = None
+    youtube_url: str | None = None,
+    caption_color: str = "Yellow",
 ) -> None:
     """
     Full processing pipeline for a single job.
@@ -195,6 +196,7 @@ async def process_job(
                 peak_words,
                 peak["start"],
                 captioned_path,
+                caption_color,
             )
 
             # 4c. Upload finished clip to Supabase Storage
