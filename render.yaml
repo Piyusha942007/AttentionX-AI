@@ -4,6 +4,11 @@ services:
     env: docker
     plan: free # Free Tier (512MB RAM). This will 'sleep' after 15 mins of inactivity. Tiny Whisper is used to fit this limit.
     region: frankfurt # Choose closest region to users
+    repo: https://github.com/Piyusha942007/AttentionX-AI
+    branch: main
+    rootDir: backend
+    dockerContext: .
+    dockerfile: Dockerfile
     dockerCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: SUPABASE_URL
