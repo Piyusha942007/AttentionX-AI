@@ -2,7 +2,7 @@ services:
   - type: web
     name: attentionx-backend
     env: docker
-    plan: standard # The standard or pro tier is required to accommodate Whisper and MediaPipe RAM footprints. Free tier limits RAM rigidly to 512MB which will trigger immediate Memory Exhaustion crashing the pipeline.
+    plan: starter # Starter ($7/mo) provides 512MB RAM. Tiny Whisper is now forced to fit this limit. 512MB is the absolute minimum; if it OOMs on long videos, you'll need the 1GB RAM tier.
     region: frankfurt # Choose closest region to users
     dockerCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:

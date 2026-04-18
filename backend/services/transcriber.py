@@ -26,8 +26,9 @@ _model: whisper.Whisper | None = None
 def _get_model() -> whisper.Whisper:
     global _model
     if _model is None:
-        logger.info("Loading Whisper 'base' model (first-time load may take ~30s)…")
-        _model = whisper.load_model("base")
+        # Using 'tiny' model to fit within Render Free/Starter RAM limits (512MB)
+        logger.info("Loading Whisper 'tiny' model (optimized for low RAM)…")
+        _model = whisper.load_model("tiny")
         logger.info("Whisper model loaded")
     return _model
 
