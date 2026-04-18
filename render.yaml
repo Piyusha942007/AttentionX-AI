@@ -6,8 +6,8 @@ services:
     region: frankfurt
     repo: https://github.com/Piyusha942007/AttentionX-AI
     branch: main
-    dockerContext: backend
-    dockerfile: backend/Dockerfile
+    dockerContext: .
+    dockerfile: Dockerfile
     dockerCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: SUPABASE_URL
