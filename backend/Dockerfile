@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libgl1-mesa-glx \
     libglib2.0-0 \
+    libgomp1 \
     wget \
     curl \
     git \
@@ -20,7 +21,7 @@ RUN apt-get update && apt-get install -y \
 # Copy the requirements file explicitly
 COPY requirements.txt .
 
-# Install any needed packages specified in requirements.txt
+# Install packages (using the CPU-specific index included in requirements.txt)
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the backend source code

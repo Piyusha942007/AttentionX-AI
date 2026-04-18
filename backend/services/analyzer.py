@@ -14,13 +14,15 @@ import json
 import logging
 import os
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from dotenv import load_dotenv
 
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
+# Initialize the new SDK client
+client = genai.Client(api_key=os.environ["GOOGLE_API_KEY"])
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Prompt
@@ -112,26 +114,34 @@ def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
     Returns:
         List of candidate peak dicts from Gemini.
     """
-    kwargs: dict = {"temperature": 0.2}
+    config = {
+        "temperature": 0.2,
+        "system_instruction": _VIRALITY_SYSTEM_PROMPT
+    }
+    
     if force_json_mime:
-        kwargs["response_mime_type"] = "application/json"
-
-    model = genai.GenerativeModel(
-        "gemini-1.5-flash",
-        generation_config=kwargs,
-    )
-
-    response = model.generate_content(_VIRALITY_SYSTEM_PROMPT + text)
-    raw = response.text.strip()
-
-    # Strip markdown code fences if Gemini wrapped the JSON
-    if raw.startswith("```"):
-        parts = raw.split("```")
-        raw = parts[1] if len(parts) > 1 else raw
-        if raw.lower().startswith("json"):
-            raw = raw[4:].strip()
+        config["response_mime_type"] = "application/json"
 
     try:
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", # Latest stable flash model
+            contents=text,
+            config=config,
+        )
+        
+        # New SDK provides parsed results directly if using response_mime_type
+        if force_json_mime and response.parsed:
+             return response.parsed if isinstance(response.parsed, list) else []
+
+        raw = response.text.strip()
+
+        # Strip markdown code fences if Gemini wrapped the JSON
+        if raw.startswith("```"):
+            parts = raw.split("```")
+            raw = parts[1] if len(parts) > 1 else raw
+            if raw.lower().startswith("json"):
+                raw = raw[4:].strip()
+
         parsed = json.loads(raw)
         if isinstance(parsed, list):
             return parsed
@@ -141,7 +151,8 @@ def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
                 if isinstance(v, list):
                     return v
         return []
-    except json.JSONDecodeError:
+    except Exception as e:
+        logger.error(f"Gemini call failed: {e}")
         return []
 
 
