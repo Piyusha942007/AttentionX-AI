@@ -6,11 +6,7 @@ Implements the Viral Signal Algorithm from the PRD:
   Signal B (60%) — Gemini virality score
   Fusion         — weighted sum → ranked → top-5 non-overlapping clips
 """
-from __future__ import annotations
-
-import logging
-
-import librosa
+import subprocess
 import numpy as np
 
 logger = logging.getLogger(__name__)
@@ -23,47 +19,63 @@ DEFAULT_CLIP_DURATION = 60.0   # seconds — target clip length
 MIN_GAP_BETWEEN_CLIPS = 90.0   # seconds — enforce gap between selected clips
 TOP_N_CLIPS = 5
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Signal A — Audio Energy (Librosa)
-# ─────────────────────────────────────────────────────────────────────────────
-
 def extract_rms(video_path: str) -> tuple[np.ndarray, np.ndarray]:
     """
-    Extract and smooth RMS energy from a video/audio file.
-
-    Pipeline:
-      1. Librosa loads audio (mono, native sr)
-      2. Compute RMS per frame (2048 window, 512 hop)
-      3. Normalize to [0, 1]
-      4. Apply 20-sample rolling average to reduce noise
-
-    Returns:
-        (frame_times, energy_smooth) — both np.ndarray of equal length.
-        frame_times: timestamp (seconds) for each RMS frame.
-        energy_smooth: smoothed, normalized RMS value per frame.
+    STREAMS audio from video via FFmpeg to calculate RMS without high RAM usage.
+    Replaces librosa.load which was causing OOM crashes.
     """
-    logger.info(f"Extracting audio RMS from: {video_path}")
-    y, sr = librosa.load(video_path, mono=True)
+    logger.info(f"Streaming RMS extraction (Zero-RAM mode) from: {video_path}")
+    
+    # 1. Spawn FFmpeg to stream mono 16kHz float32 audio to stdout
+    cmd = [
+        "ffmpeg", "-i", video_path,
+        "-f", "f32le", "-ac", "1", "-ar", "16000",
+        "pipe:1"
+    ]
+    
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        
+        # 1 second of 16kHz audio = 16,000 floats * 4 bytes = 64,000 bytes
+        chunk_size = 16000 * 4 
+        rms_values = []
+        
+        while True:
+            raw_data = proc.stdout.read(chunk_size)
+            if not raw_data:
+                break
+            
+            # Convert bytes to numpy array
+            audio_chunk = np.frombuffer(raw_data, dtype=np.float32)
+            if len(audio_chunk) == 0:
+                break
+                
+            # Manual RMS calculation: sqrt(mean(x^2))
+            rms = np.sqrt(np.mean(np.square(audio_chunk)) + 1e-9)
+            rms_values.append(float(rms))
+            
+        proc.wait()
+        
+        if not rms_values:
+            logger.warning("No audio data extracted; using zero-array")
+            return np.array([0.0]), np.array([0.0])
 
-    rms = librosa.feature.rms(y=y, frame_length=2048, hop_length=512)[0]
-
-    # Normalize 0–1
-    rms_min, rms_max = rms.min(), rms.max()
-    rms_norm = (rms - rms_min) / (rms_max - rms_min + 1e-9)
-
-    # Smooth with 20-sample rolling average (PRD spec)
-    energy_smooth = np.convolve(rms_norm, np.ones(20) / 20, mode="same")
-
-    frame_times = librosa.frames_to_time(
-        np.arange(len(rms_norm)), sr=sr, hop_length=512
-    )
-
-    logger.info(
-        f"RMS extracted: {len(energy_smooth)} frames, "
-        f"audio duration {frame_times[-1]:.1f}s"
-    )
-    return frame_times, energy_smooth
+        # 2. Normalize and Smooth (Native NumPy)
+        energy = np.array(rms_values)
+        energy_norm = (energy - energy.min()) / (energy.max() - energy.min() + 1e-9)
+        
+        # 20-sample rolling average
+        energy_smooth = np.convolve(energy_norm, np.ones(20) / 20, mode="same")
+        
+        # Frame times: since each chunk is exactly 1 second (16kHz chunk_size)
+        frame_times = np.arange(len(energy_smooth)).astype(float)
+        
+        logger.info(f"Streamed RMS: {len(energy_smooth)} seconds analyzed.")
+        return frame_times, energy_smooth
+        
+    except Exception as e:
+        logger.error(f"Streaming RMS failed: {e}")
+        return np.array([0.0]), np.array([0.0])
 
 
 def _audio_score_for_window(

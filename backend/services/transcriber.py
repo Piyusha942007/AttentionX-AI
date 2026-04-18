@@ -4,7 +4,6 @@ import logging
 import os
 import gc
 from pathlib import Path
-from typing import Any
 
 from faster_whisper import WhisperModel
 
