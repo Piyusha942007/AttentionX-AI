@@ -19,6 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from db import update_job, upload_clip_to_storage
+from services.memory import cleanup_memory
 
 logger = logging.getLogger(__name__)
 
@@ -39,17 +40,10 @@ async def process_job(
     caption_color: str = "Yellow",
 ) -> None:
     """
-    Full processing pipeline for a single job.
-
-    Status transitions written to Supabase at each step:
-        queued → transcribing → analyzing → cropping → done
-        (or → failed on any exception)
-
-    Args:
-        job_id:     Supabase job UUID.
-        video_path: Local filesystem path to the uploaded video file.
+    Full processing pipeline for a single job with AGGRESSIVE MEMORY MANAGEMENT.
     """
     logger.info(f"[{job_id}] Pipeline starting — source: {video_path}")
+    cleanup_memory("Start")
 
     try:
         # ── Step 0: Download (if YouTube) ───────────────────────────────────
@@ -61,7 +55,7 @@ async def process_job(
             from db import upload_video_to_storage
             
             # Download to a temporary internal path
-            output_dir = str(Path("backend/uploads") / job_id)
+            output_dir = str(Path("/tmp/uploads") / job_id)
             meta = await _run_sync(download_youtube_video, youtube_url, output_dir)
             video_path = meta["local_path"]
             
@@ -77,17 +71,19 @@ async def process_job(
                 storage_path=storage_path
             )
             logger.info(f"[{job_id}] Download complete: {meta['title']}")
+            cleanup_memory("After Download")
 
         if not video_path:
             raise ValueError("No video source provided (neither path nor URL)")
 
         # ── Step 1: Transcribe ────────────────────────────────────────────────
         await update_job(job_id, status="transcribing")
-        logger.info(f"[{job_id}] Step 1/4: Transcribing with Whisper…")
+        logger.info(f"[{job_id}] Step 1/4: Transcribing with faster-whisper…")
 
         from services.transcriber import transcribe_video
         segments = await _run_sync(transcribe_video, video_path)
         logger.info(f"[{job_id}] Transcription done: {len(segments)} segments")
+        cleanup_memory("After Transcription")
 
         # ── Step 2: Analyze (Gemini) + Score (Librosa + Fusion) ────────────
         await update_job(job_id, status="analyzing")
@@ -101,11 +97,12 @@ async def process_job(
             pick_top_peaks,
         )
 
-        # Run Gemini analysis and audio RMS extraction in parallel (both sync)
-        candidate_peaks, rms_result = await asyncio.gather(
-            _run_sync(analyze_transcript, segments),
-            _run_sync(extract_rms, video_path),
-        )
+        # Run Gemini analysis and audio RMS extraction in sequence (to save RAM)
+        candidate_peaks = await _run_sync(analyze_transcript, segments)
+        cleanup_memory("After Gemini")
+        
+        rms_result = await _run_sync(extract_rms, video_path)
+        cleanup_memory("After Librosa")
 
         frame_times, energy_smooth = rms_result
         ranked = fuse_and_rank(candidate_peaks, frame_times, energy_smooth)
@@ -114,7 +111,6 @@ async def process_job(
         # Fallback if Gemini or Librosa fails/returns 0 peaks (for MVP resilience)
         if not top_peaks:
             logger.warning(f"[{job_id}] No peaks found by Gemini. Using fallback mock peak.")
-            # Calculate a safe bound
             max_dur = segments[-1]["end"] if segments else 60.0
             clip_end = min(max_dur, 45.0)
             top_peaks = [{
@@ -125,8 +121,7 @@ async def process_job(
 
         rms_chart = downsample_rms(energy_smooth)
         
-        # NEW: Prepare partial peaks for progressive discovery
-        # These appear in the UI as "Rendering..." immediately after analysis
+        # Prepare initial peaks for the UI
         initial_peaks = []
         for peak in top_peaks:
             initial_peaks.append({
@@ -142,25 +137,27 @@ async def process_job(
                 "words":      [],
             })
 
-        logger.info(
-            f"[{job_id}] Scoring done: {len(candidate_peaks)} candidates → "
-            f"{len(top_peaks)} top clips selected. Updating UI for progressive discovery."
-        )
+        logger.info(f"[{job_id}] Scoring done: {len(top_peaks)} top clips selected.")
 
         # Persist RMS array and initial peaks so the frontend can render them
-        # while cropping is still running
         await update_job(
             job_id, 
             status="cropping", 
             rms_array=rms_chart,
             peaks=initial_peaks
         )
+        
+        # Explicitly clear large analytical arrays
+        del frame_times
+        del energy_smooth
+        cleanup_memory("Before Tracking")
 
         # ── Step 3: Face Track ─────────────────────────────────────────────
         logger.info(f"[{job_id}] Step 3/4: Running MediaPipe face tracking…")
 
         from services.face_tracker import detect_face_centers
         face_centers = await _run_sync(detect_face_centers, video_path)
+        cleanup_memory("After MediaPipe")
 
         # ── Step 4: Crop + Caption + Upload ───────────────────────────────
         logger.info(f"[{job_id}] Step 4/4: Cropping {len(top_peaks)} clips…")
@@ -174,10 +171,10 @@ async def process_job(
             clip_id = str(uuid.uuid4())
             clip_num = f"{i + 1}/{len(top_peaks)}"
 
-            # Collect Whisper word timestamps for this clip's time range
+            # Collect words for this clip
             peak_words = _extract_words_for_peak(segments, peak["start"], peak["end"])
 
-            # 4a. Crop to 9:16 vertical
+            # 4a. Crop
             logger.info(f"[{job_id}] Clip {clip_num}: cropping {peak['start']:.0f}s–{peak['end']:.0f}s")
             raw_clip_path = await _run_sync(
                 make_vertical_clip,
@@ -188,7 +185,7 @@ async def process_job(
                 face_centers,
             )
 
-            # 4b. Burn karaoke captions
+            # 4b. Burn captions
             captioned_path = raw_clip_path.replace(".mp4", "_captioned.mp4")
             final_clip_path = await _run_sync(
                 burn_captions,
@@ -199,9 +196,9 @@ async def process_job(
                 caption_color,
             )
 
-            # 4c. Upload finished clip to Supabase Storage
+            # 4c. Upload
             clip_url = await upload_clip_to_storage(final_clip_path, clip_id)
-            logger.info(f"[{job_id}] Clip {clip_num} uploaded → {clip_url}")
+            logger.info(f"[{job_id}] Clip {clip_num} uploaded")
 
             final_peaks.append({
                 "time":       peak["time"],
@@ -215,9 +212,11 @@ async def process_job(
                 "clip_url":   clip_url,
                 "words":      peak_words,
             })
+            
+            # GC after each rendered clip to prevent spike accumulation
+            cleanup_memory(f"Clip {i+1} Render")
 
         # ── Done ──────────────────────────────────────────────────────────
-        # Calculate video duration from the last segment's end time
         duration = segments[-1]["end"] if segments else 0.0
 
         await update_job(
@@ -227,7 +226,8 @@ async def process_job(
             rms_array=rms_chart,
             duration=duration,
         )
-        logger.info(f"[{job_id}] ✅ Pipeline complete: {len(final_peaks)} clips ready")
+        logger.info(f"[{job_id}] ✅ Pipeline complete")
+        cleanup_memory("Pipeline Finished")
 
     except Exception as exc:
         logger.error(f"[{job_id}] ❌ Pipeline failed: {exc}", exc_info=True)

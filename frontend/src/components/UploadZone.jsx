@@ -139,9 +139,17 @@ const UploadZone = ({ onUploadComplete, isProcessing, currentStatus }) => {
             </div>
 
             {error && (
-                <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl flex items-center gap-3 text-rose-500 text-[9px] font-black uppercase tracking-tight animate-shake">
-                    <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
-                    <span>{error}</span>
+                <div className="flex flex-col gap-2 animate-shake">
+                    <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl flex items-center gap-3 text-rose-500 text-[9px] font-black uppercase tracking-tight">
+                        <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                        <span>{error}</span>
+                    </div>
+                    {error.toLowerCase().includes('youtube') && (
+                        <p className="text-[8px] text-muted font-bold uppercase px-2 leading-relaxed">
+                            💡 YouTube is currently blocking our server. <br/>
+                            Try downloading the video and using the <span className="text-white">LOCAL FILE</span> tab above for 100% success.
+                        </p>
+                    )}
                 </div>
             )}
 

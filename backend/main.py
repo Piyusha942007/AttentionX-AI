@@ -66,12 +66,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Allowed origins for the production MVP/Vercel deployment
+origins = [
+    "http://localhost:5173",
+    "https://attention-x-ai.vercel.app",
+    "https://attentionxai.vercel.app",
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for the production MVP/Vercel deployment
+    allow_origins=["*"], # Keeping "*" for MVP but explicitly mentioning origins for preflight reliability
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
