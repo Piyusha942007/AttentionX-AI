@@ -183,7 +183,8 @@ def burn_captions(
             "-i", clip_path,
             "-vf", f"ass='{ffmpeg_path}'",
             "-c:v", "libx264",
-            "-preset", "fast",
+            "-preset", "ultrafast",
+            "-threads", "2",
             "-c:a", "copy",
             output_path,
         ]

@@ -34,7 +34,7 @@ except (ImportError, AttributeError):
 logger = logging.getLogger(__name__)
 
 CROP_W     = 608    # 9:16 output width at 1080p height
-FRAME_SKIP = 3      # Run MediaPipe every N frames
+FRAME_SKIP = 10     # Run MediaPipe every N frames (optimized for Free tier speed)
 SMOOTH_WIN = 30     # Rolling average window (frames)
 
 

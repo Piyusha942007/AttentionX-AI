@@ -103,8 +103,9 @@ def make_vertical_clip(
         output_path,
         fps=30,
         codec="libx264",
-        preset="fast",
+        preset="ultrafast",
         audio_codec="aac",
+        threads=2,
         temp_audiofile=str(OUTPUT_DIR / f"{clip_id}_tmp_audio.m4a"),
         remove_temp=True,
         logger=None,   # suppress MoviePy's built-in progress bar
