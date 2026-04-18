@@ -1,0 +1,51 @@
+# --- Sensitive Info ---
+.env
+.env*.local
+*.key
+certs/
+
+# --- Python / Backend ---
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+
+# --- Media & Heavy Assets (CRITICAL) ---
+backend/uploads/
+backend/output_clips/
+backend/cache/
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.json
+# If you decide NOT to push the binaries (best for long-term):
+# backend/ffmpeg.exe
+# backend/ffprobe.exe
+# backend/ffplay.exe
+
+# --- Node / Frontend ---
+node_modules/
+frontend/node_modules/
+dist/
+dist-ssr/
+*.local
+.eslintcache
+.parcel-cache
+.cache/
+
+# --- OS Specific ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
