@@ -8,6 +8,7 @@ const UploadZone = ({ onUploadComplete, isProcessing, currentStatus }) => {
     const [youtubeUrl, setYoutubeUrl] = useState('')
     const [uploading, setUploading] = useState(false)
     const [error, setError] = useState(null)
+    const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
     const onDrop = useCallback((acceptedFiles) => {
         setFile(acceptedFiles[0])
@@ -30,7 +31,7 @@ const UploadZone = ({ onUploadComplete, isProcessing, currentStatus }) => {
         formData.append('file', file)
 
         try {
-            const response = await fetch('/api/jobs', {
+            const response = await fetch(`${API_BASE}/api/jobs`, {
                 method: 'POST',
                 body: formData,
             })
@@ -56,7 +57,7 @@ const UploadZone = ({ onUploadComplete, isProcessing, currentStatus }) => {
         setError(null)
 
         try {
-            const response = await fetch('/api/jobs/youtube', {
+            const response = await fetch(`${API_BASE}/api/jobs/youtube`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ url: youtubeUrl }),

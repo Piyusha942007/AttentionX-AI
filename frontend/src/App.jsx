@@ -43,6 +43,7 @@ export default function App() {
   const [captionColor, setCaptionColor] = useState('Yellow')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState(null)
+  const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
   // Polling logic
   useEffect(() => {
@@ -51,7 +52,7 @@ export default function App() {
     if (isProcessing) {
       timer = setInterval(async () => {
         try {
-          const res = await fetch(`/api/jobs/${job.job_id}`)
+          const res = await fetch(`${API_BASE}/api/jobs/${job.job_id}`)
           if (res.ok) {
             const data = await res.json()
             setJob(data)
@@ -87,7 +88,7 @@ export default function App() {
     formData.append('file', file)
     formData.append('caption_color', captionColor)
     try {
-      const res = await fetch('/api/jobs', { method: 'POST', body: formData })
+      const res = await fetch(`${API_BASE}/api/jobs`, { method: 'POST', body: formData })
       if (res.ok) { setJob(await res.json()) } else { setError('Upload failed') }
     } catch { setError('Connection error') } finally { setUploading(false) }
   }
@@ -96,7 +97,7 @@ export default function App() {
     if (!ytUrl) return
     setUploading(true); setError(null)
     try {
-      const res = await fetch('/api/jobs/youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: ytUrl, caption_color: captionColor }) })
+      const res = await fetch(`${API_BASE}/api/jobs/youtube`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: ytUrl, caption_color: captionColor }) })
       if (res.ok) { setJob(await res.json()) } else { setError('URL processing failed') }
     } catch { setError('Connection error') } finally { setUploading(false) }
   }
@@ -104,7 +105,7 @@ export default function App() {
   const loadMockDemo = async () => {
     setUploading(true); setError(null)
     try {
-      const res = await fetch('/api/jobs/mock/demo')
+      const res = await fetch(`${API_BASE}/api/jobs/mock/demo`)
       if (res.ok) { 
         const data = await res.json()
         setJob(data)
@@ -428,7 +429,7 @@ export default function App() {
                 onMouseEnter={e => e.currentTarget.style.background='#4a41a3'}
                 onMouseLeave={e => e.currentTarget.style.background='#534AB7'}>
                 {sel?.clip_url ? (
-                    <a href={`/api/clips/${sel.clip_id}/download`} style={{ color:'inherit', textDecoration:'none', display:'flex', alignItems:'center', gap:8 }} download>
+                    <a href={`${API_BASE}/api/clips/${sel.clip_id}/download`} style={{ color:'inherit', textDecoration:'none', display:'flex', alignItems:'center', gap:8 }} download>
                         <DownloadCloud size={16} /> Export clip
                     </a>
                 ) : (
