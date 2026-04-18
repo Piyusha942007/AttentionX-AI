@@ -57,7 +57,7 @@ def make_vertical_clip(
     logger.info(f"Cropping clip {clip_id}: {start:.1f}s – {end:.1f}s → {output_path}")
 
     source_clip = VideoFileClip(source_path)
-    clip        = source_clip.subclip(start, end)
+    clip        = source_clip.subclipped(start, end)
     clip_fps    = clip.fps or 30.0
     frame_w     = clip.w
     frame_h     = clip.h
@@ -93,7 +93,7 @@ def make_vertical_clip(
 
     # ── Apply and export ──────────────────────────────────────────────────
 
-    vertical = clip.fl(crop_frame, apply_to=["mask", "video"])
+    vertical = clip.transform(crop_frame, apply_to="mask")
 
     vertical.write_videofile(
         output_path,

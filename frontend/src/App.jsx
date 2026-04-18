@@ -1,378 +1,448 @@
-import React, { useState, useEffect, useRef } from 'react'
-import { 
-  Grid, History, Radio, User, Upload, Youtube, 
-  Link as LinkIcon, Sparkles, Scissors, Play, 
-  CheckCircle2, Loader2, DownloadCloud, X 
-} from 'lucide-react'
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react'
+import { useDropzone } from 'react-dropzone'
+import { Sparkles, Play, Grid, Clock, Radio, User, Upload, CheckCircle2, Loader2, DownloadCloud, X, AlertCircle } from 'lucide-react'
 import './index.css'
 
-// ─── Example Data ───
-const MOCK_NUGGETS = [
-  { id: 1, score: 91, headline: "The only metric that actually predicts startup success", category: "Profound insight", time: "14:22–15:08", peakX: 22, color: "var(--brand-purple)" },
-  { id: 2, score: 78, headline: "I was rejected by 47 investors. Here's what changed everything", category: "Personal story", time: "30:41–31:29", peakX: 51, color: "var(--accent-amber)" },
-  { id: 3, score: 64, headline: "Most founders skip this step and lose 6 months", category: "Actionable tip", time: "47:03–47:55", peakX: 78, color: "var(--accent-teal)" }
+/* ─── Static Data ────────────────────────────────────────────────────────── */
+const STEPS = [
+  { name:"Transcribing audio", engine:"Whisper" },
+  { name:"Detecting emotion peaks", engine:"Librosa" },
+  { name:"Analyzing with Gemini", engine:"AI Analysis" },
+  { name:"Rendering vertical clips", engine:"MoviePy" },
 ]
 
-const PROCESSING_STEPS = [
-  { id: 1, name: "Transcribing audio", engine: "Whisper" },
-  { id: 2, name: "Detecting emotion peaks", engine: "Librosa" },
-  { id: 3, name: "Analyzing with Gemini", engine: "AI Analysis" },
-  { id: 4, name: "Rendering vertical clips", engine: "MoviePy" }
-]
+/* ─── Styles ─────────────────────────────────────────────────────────────── */
+const S = {
+  shell: { display:'grid', gridTemplateColumns:'56px 320px 1fr 280px', gridTemplateRows:'52px 1fr 40px', height:'100vh', width:'100vw' },
+  topBar: { gridColumn:'1/-1', gridRow:'1', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', borderBottom:'0.5px solid #27272a', background:'#09090b' },
+  sidebar: { gridColumn:'1', gridRow:'2', display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', borderRight:'0.5px solid #27272a', background:'#09090b' },
+  bottomBar: { gridColumn:'1/-1', gridRow:'3', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', background:'#0d0d0f', borderTop:'0.5px solid #1c1c1f' },
+  panel: (extra) => ({ gridRow:'2', display:'flex', flexDirection:'column', overflow:'hidden', borderRight:'0.5px solid #27272a', ...extra }),
 
-const App = () => {
-  const [isDemoMode, setIsDemoMode] = useState(false)
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [currentStep, setCurrentStep] = useState(0)
-  const [progress, setProgress] = useState(0)
-  const [selectedNugget, setSelectedNugget] = useState(null)
-  const [currentTime, setCurrentTime] = useState("14:22")
-  const [uploadMode, setUploadMode] = useState('file') // 'file' | 'url'
+  row: { display:'flex', flexDirection:'row', alignItems:'center' },
+  col: { display:'flex', flexDirection:'column' },
+  badge: (bg, color) => ({ fontSize:10, fontWeight:500, padding:'2px 8px', borderRadius:99, background:bg, color, whiteSpace:'nowrap' }),
+  sectionLabel: { fontSize:10, fontWeight:500, letterSpacing:'0.08em', textTransform:'uppercase', color:'#52525b', padding:'16px 16px 10px' },
+  settingRow: { display:'flex', alignItems:'center', justifyContent:'space-between', height:36, borderBottom:'0.5px solid #18181b', padding:'0 16px' },
+}
+
+/* ─── Toggle ─────────────────────────────────────────────────────────────── */
+const Toggle = ({ on }) => (
+  <div style={{ width:28, height:16, borderRadius:99, background: on ? '#7F77DD' : '#27272a', position:'relative', flexShrink:0 }}>
+    <div style={{ width:12, height:12, borderRadius:99, background:'#fff', position:'absolute', top:2, left: on ? 14 : 2, transition:'left 150ms ease' }} />
+  </div>
+)
+
+/* ─── App ────────────────────────────────────────────────────────────────── */
+export default function App() {
+  const [job, setJob] = useState(null)
+  const [sel, setSel] = useState(null)
+  const [tab, setTab] = useState('file')
   const [file, setFile] = useState(null)
+  const [ytUrl, setYtUrl] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState(null)
 
-  // Simulation logic for Demo Mode
+  // Polling logic
   useEffect(() => {
-    if (isDemoMode) {
-      setIsProcessing(true)
-      setCurrentStep(0)
-      setProgress(0)
-      setSelectedNugget(null)
-
-      let p = 0
-      const interval = setInterval(() => {
-        p += 2
-        setProgress(p)
-        
-        if (p < 25) setCurrentStep(1)
-        else if (p < 50) setCurrentStep(2)
-        else if (p < 75) setCurrentStep(3)
-        else if (p < 100) setCurrentStep(4)
-
-        if (p >= 100) {
-          clearInterval(interval)
-          setTimeout(() => {
-            setIsProcessing(false)
-            setSelectedNugget(MOCK_NUGGETS[0])
-          }, 500)
-        }
-      }, 60)
-      return () => clearInterval(interval)
-    }
-  }, [isDemoMode])
-
-  // ─── Waveform Generator ───
-  const renderWaveform = () => {
-    const bars = []
-    for (let i = 0; i < 80; i++) {
-        let height = Math.floor(Math.random() * 15) + 15
-        let color = '#27272a'
-        
-        // Peak Clusters
-        const isPeak1 = i >= 15 && i <= 22
-        const isPeak2 = i >= 38 && i <= 45
-        const isPeak3 = i >= 60 && i <= 67
-
-        if (isPeak1) { height = Math.floor(Math.random() * 30) + 70; color = 'var(--brand-purple)' }
-        if (isPeak2) { height = Math.floor(Math.random() * 30) + 70; color = 'var(--accent-amber)' }
-        if (isPeak3) { height = Math.floor(Math.random() * 30) + 70; color = 'var(--accent-teal)' }
-
-        bars.push(
-          <div 
-            key={i} 
-            className="waveform-bar"
-            style={{ 
-              height: `${height}%`, 
-              backgroundColor: color,
-              opacity: 0.5 + ((height / 100) * 0.5)
-            }}
-            onClick={() => {
-                if (!isProcessing) {
-                    if (isPeak1) setSelectedNugget(MOCK_NUGGETS[0])
-                    else if (isPeak2) setSelectedNugget(MOCK_NUGGETS[1])
-                    else if (isPeak3) setSelectedNugget(MOCK_NUGGETS[2])
+    let timer
+    const isProcessing = job && !['done', 'failed'].includes(job.status)
+    if (isProcessing) {
+      timer = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/jobs/${job.job_id}`)
+          if (res.ok) {
+            const data = await res.json()
+            setJob(data)
+            if (data.status === 'done') {
+                if (data.peaks && data.peaks.length > 0) {
+                    setSel(data.peaks[0])
                 }
-            }}
-          />
-        )
+            }
+          }
+        } catch (err) { console.error('Polling error:', err) }
+      }, 3000)
+    }
+    return () => clearInterval(timer)
+  }, [job])
+
+  // Dropzone setup
+  const onDrop = useCallback((acceptedFiles) => {
+    setFile(acceptedFiles[0])
+    setError(null)
+  }, [])
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'video/*': ['.mp4', '.mov', '.mkv'] },
+    multiple: false,
+    disabled: uploading || (job && !['done', 'failed'].includes(job.status))
+  })
+
+  /* ─── Actions ──────────────────────────────────────────────────────────── */
+  const handleUpload = async () => {
+    if (!file) return
+    setUploading(true); setError(null)
+    const formData = new FormData()
+    formData.append('file', file)
+    try {
+      const res = await fetch('/api/jobs', { method: 'POST', body: formData })
+      if (res.ok) { setJob(await res.json()) } else { setError('Upload failed') }
+    } catch { setError('Connection error') } finally { setUploading(false) }
+  }
+
+  const handleUrlSubmit = async () => {
+    if (!ytUrl) return
+    setUploading(true); setError(null)
+    try {
+      const res = await fetch('/api/jobs/youtube', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: ytUrl }) })
+      if (res.ok) { setJob(await res.json()) } else { setError('URL processing failed') }
+    } catch { setError('Connection error') } finally { setUploading(false) }
+  }
+
+  const loadMockDemo = async () => {
+    setUploading(true); setError(null)
+    try {
+      const res = await fetch('/api/jobs/mock/demo')
+      if (res.ok) { 
+        const data = await res.json()
+        setJob(data)
+        if (data.peaks?.length > 0) setSel(data.peaks[0])
+      }
+    } catch { setError('Failed to load demo setup') } finally { setUploading(false) }
+  }
+
+  const resetAll = () => { setJob(null); setSel(null); setFile(null); setYtUrl(''); setError(null) }
+
+  /* ─── Derived State / Helpers ────────────────────────────────────────────── */
+  const isProcessing = uploading || (job && !['done', 'failed'].includes(job.status))
+  const isDone = job && job.status === 'done'
+  const NUGGETS = job?.peaks || []
+
+  const getJobProgress = () => {
+      if (uploading || job?.status === 'downloading') return { step: 1, prog: 20 }
+      if (job?.status === 'transcribing') return { step: 1, prog: 50 }
+      if (job?.status === 'analyzing') return { step: 2, prog: 70 }
+      if (job?.status === 'cropping') return { step: 3, prog: 90 }
+      if (job?.status === 'done') return { step: 4, prog: 100 }
+      return { step: 0, prog: 0 }
+  }
+  const { step, prog } = getJobProgress()
+
+  const generateBars = () => {
+    // If real demo or job is done and has peaks, map them
+    const bars = []
+    const totalDuration = job?.duration || 3600 // fallback
+    for (let i = 0; i < 80; i++) {
+        const pct = (i / 80) * 100
+        let h = 12 + Math.random() * 18
+        let c = '#27272a'
+        let matchedPeak = null
+
+        if (NUGGETS.length > 0) {
+            NUGGETS.forEach((n, idx) => {
+                const peakPct = (n.time / totalDuration) * 100
+                // Match bar to peak if within 4% distance
+                if (Math.abs(pct - peakPct) < 4) {
+                    h = 55 + Math.random() * 45
+                    c = idx === 0 ? '#7F77DD' : idx === 1 ? '#EF9F27' : '#5DCAA5'
+                    matchedPeak = n
+                }
+            })
+        }
+        bars.push({ h, c, matchedPeak })
     }
     return bars
   }
+  const bars = useMemo(generateBars, [job])
+
+  const getPeakColor = (idx) => idx === 0 ? '#7F77DD' : idx === 1 ? '#EF9F27' : '#5DCAA5'
+  const getCatPill = (idx) => {
+      if (idx===0) return { bg: '#26215C', c: '#AFA9EC' }
+      if (idx===1) return { bg: '#412402', c: '#FAC775' }
+      return { bg: '#173404', c: '#97C459' }
+  }
 
   return (
-    <div className="obsidian-shell">
-      {/* ─── Top Bar ─── */}
-      <header className="top-bar">
-        <div className="flex items-center gap-3">
-          <div style={{ width: 26, height: 26, background: 'var(--brand-purple)', borderRadius: 6 }} className="flex">
-            <Sparkles size={16} color="white" strokeWidth={2} />
+    <div style={S.shell}>
+      {/* ═══ TOP BAR ═══ */}
+      <header style={S.topBar}>
+        <div style={{ ...S.row, gap:10 }}>
+          <div style={{ width:26, height:26, background:'#534AB7', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <Sparkles size={14} color="#fff" />
           </div>
-          <span style={{ fontSize: 14, fontWeight: 500 }}>AttentionX</span>
-          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>MVP 1.0</span>
+          <span style={{ fontSize:14, fontWeight:500 }}>AttentionX</span>
+          <span style={{ fontSize:11, color:'#52525b' }}>MVP 1.0</span>
         </div>
-        <button 
-          className="btn" 
-          style={{ background: '#534AB7', color: 'white', fontSize: 12, padding: '0 12px', height: 32, borderRadius: 6 }}
-          onClick={() => setIsDemoMode(true)}
-        >
-          <Play size={12} fill="white" className="mr-2" /> Try demo mode
-        </button>
+        {!job ? (
+          <button onClick={loadMockDemo} disabled={uploading} style={{ ...S.row, gap:6, background:'#534AB7', color:'#fff', fontSize:12, fontWeight:500, padding:'0 14px', height:32, borderRadius:6, opacity: uploading ? 0.5 : 1 }}>
+            {uploading ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} fill="#fff" />} Try demo mode
+          </button>
+        ) : (
+          <button onClick={resetAll} style={{ ...S.row, gap:6, background:'transparent', border:'0.5px solid #27272a', color:'#a1a1aa', fontSize:12, fontWeight:500, padding:'0 14px', height:32, borderRadius:6 }}>
+            <X size={12} /> New Project
+          </button>
+        )}
       </header>
 
-      {/* ─── Sidebar ─── */}
-      <aside className="sidebar">
-        {[Grid, History, Radio, User].map((Icon, i) => (
-          <div 
-            key={i} 
-            style={{ 
-               width: 36, height: 36, borderRadius: 8, marginTop: Icon === User ? 'auto' : 8,
-               background: i === 0 ? 'var(--bg-active)' : 'transparent'
-            }}
-            className="flex items-center justify-center cursor-pointer"
-          >
-            <Icon size={18} stroke={i === 0 ? '#a1a1aa' : '#52525b'} strokeWidth={1.5} />
+      {/* ═══ SIDEBAR ═══ */}
+      <aside style={S.sidebar}>
+        {[Grid, Clock, Radio].map((Ic, i) => (
+          <div key={i} style={{ width:36, height:36, borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', background: i===0 ? '#1c1c1f' : 'transparent', marginBottom:4 }}>
+            <Ic size={18} stroke={i===0 ? '#a1a1aa' : '#52525b'} strokeWidth={1.5} fill="none" />
           </div>
         ))}
+        <div style={{ marginTop:'auto', width:36, height:36, borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <User size={18} stroke="#52525b" strokeWidth={1.5} fill="none" />
+        </div>
       </aside>
 
-      {/* ─── Left Panel: Source & Settings ─── */}
-      <main className="panel" style={{ width: 320 }}>
-        <div className="section-label">Source material</div>
-        
-        <div className="px-4 pb-4">
-          <div className="flex gap-1 p-1 bg-surface border-std rounded-xl mb-4" style={{ background: '#0d0d0f' }}>
-            {['Local file', 'YouTube link'].map((t, i) => (
-                <button 
-                  key={t}
-                  className="flex-1 py-1.5 rounded-lg text-[11px] font-medium"
-                  style={{ 
-                    background: (i === 0 && uploadMode === 'file') || (i === 1 && uploadMode === 'url') ? '#1c1c1f' : 'transparent',
-                    border: (i === 0 && uploadMode === 'file') || (i === 1 && uploadMode === 'url') ? '0.5px solid #3f3f46' : '0.5px solid transparent',
-                    color: (i === 0 && uploadMode === 'file') || (i === 1 && uploadMode === 'url') ? '#a1a1aa' : '#71717a'
-                  }}
-                  onClick={() => setUploadMode(i === 0 ? 'file' : 'url')}
-                >
-                  {t}
-                </button>
-            ))}
-          </div>
+      {/* ═══ LEFT PANEL ═══ */}
+      <div style={S.panel({ width:320, overflowY:'auto' })}>
+        <div style={S.sectionLabel}>Source material</div>
 
-          {!file && !isDemoMode ? (
-            <div className="flex flex-col items-center justify-center p-6 border-std rounded-xl" style={{ borderStyle: 'dashed', borderColor: '#3f3f46' }}>
-                <div style={{ width: 32, height: 32, background: '#1c1c1f', borderRadius: 8 }} className="flex mb-3">
+        <div style={{ display:'flex', gap:4, margin:'0 16px 12px', padding:4, background:'#0d0d0f', borderRadius:8 }}>
+          {['file','url'].map(t => (
+            <button key={t} onClick={() => setTab(t)} disabled={job || uploading} style={{ flex:1, textAlign:'center', fontSize:11, fontWeight:500, padding:'6px 0', borderRadius:6, background: tab===t ? '#1c1c1f' : 'transparent', border: tab===t ? '0.5px solid #3f3f46' : '0.5px solid transparent', color: tab===t ? '#a1a1aa' : '#52525b', transition:'all 120ms ease', opacity: (job||uploading) ? 0.5 : 1 }}>
+              {t === 'file' ? 'Local file' : 'YouTube link'}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'file' ? (
+             <div 
+                {...getRootProps()} 
+                style={{ margin:'0 16px', border: isDragActive ? '1px dashed #5DCAA5' : '0.5px dashed #3f3f46', borderRadius:10, padding:24, display:'flex', flexDirection:'column', alignItems:'center', gap:6, cursor: (job || uploading) ? 'not-allowed' : 'pointer', background: isDragActive ? '#04342C' : 'transparent' }}
+             >
+                <input {...getInputProps()} />
+                <div style={{ width:36, height:36, background:'#1c1c1f', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center' }}>
                     <Upload size={16} color="#a1a1aa" />
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 500, color: '#a1a1aa' }}>Drop your video here</span>
-                <span style={{ fontSize: 11, color: '#52525b', marginTop: 4 }}>MP4, MOV, WebM up to 4GB</span>
+                <span style={{ fontSize:13, fontWeight:500, color:'#a1a1aa', textAlign:'center' }}>{file ? file.name : (job ? job.filename : 'Drop your video here')}</span>
+                {!file && !job && <span style={{ fontSize:11, color:'#52525b' }}>MP4, MOV, WebM up to 4GB</span>}
+             </div>
+        ) : (
+             <div style={{ margin:'0 16px', display:'flex', flexDirection:'column', gap:8 }}>
+                <input 
+                    type="url" 
+                    placeholder="Paste YouTube link here..."
+                    value={ytUrl}
+                    onChange={e => setYtUrl(e.target.value)}
+                    onKeyDown={e => { if(e.key === 'Enter') handleUrlSubmit() }}
+                    disabled={job || uploading}
+                    style={{ background:'#161618', border:'0.5px solid #27272a', padding:'12px 14px', borderRadius:8, color:'#fafafa', fontSize:12, outline:'none' }}
+                />
+             </div>
+        )}
+
+        {error && (
+            <div style={{ margin:'12px 16px 0', padding:'10px 12px', background:'#4A1B0C', border:'0.5px solid #F0997B', borderRadius:8, color:'#F0997B', fontSize:10, fontWeight:500, display:'flex', alignItems:'center', gap:8 }}>
+                <AlertCircle size={14} /> {error}
             </div>
-          ) : (
-            <div className="flex items-center justify-between p-3 bg-active border-std rounded-lg">
-                <div className="flex items-center gap-3 overflow-hidden">
-                    <Sparkles size={14} color="var(--brand-purple)" />
-                    <span className="text-[12px] font-medium truncate">{file?.name || "viral_marketing_workshop.mp4"}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <span className="badge" style={{ background: '#27272a', color: '#a1a1aa' }}>08:14</span>
-                    <button onClick={() => {setFile(null); setIsDemoMode(false); setIsProcessing(false)}}><X size={14} color="#52525b" /></button>
-                </div>
+        )}
+
+        {!job && (file || ytUrl) && !uploading && (
+             <button onClick={tab === 'file' ? handleUpload : handleUrlSubmit} style={{ margin:'12px 16px 0', background:'#534AB7', color:'#fff', height:38, borderRadius:8, fontSize:11, fontWeight:500 }}>
+                 START MINING NUGGETS
+             </button>
+        )}
+
+        <div style={S.sectionLabel}>Analysis settings</div>
+        {[
+          { l:"Clip duration", v:"45–60 sec", bg:'#26215C', c:'#AFA9EC' },
+          { l:"Peak detection", v:"Gemini + Librosa", bg:'#173404', c:'#97C459' },
+          { l:"Face tracking", toggle:true },
+          { l:"Karaoke captions", toggle:true },
+          { l:"Hook headline", toggle:true },
+          { l:"Output format", v:"9:16 TikTok", bg:'#412402', c:'#FAC775' },
+        ].map((s,i) => (
+          <div key={i} style={S.settingRow}>
+            <span style={{ fontSize:12, color:'#71717a' }}>{s.l}</span>
+            {s.toggle ? <Toggle on /> : <span style={S.badge(s.bg, s.c)}>{s.v}</span>}
+          </div>
+        ))}
+      </div>
+
+      {/* ═══ CENTER PANEL ═══ */}
+      <div style={S.panel({ flex:1 })}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', height:44, padding:'0 16px', borderBottom:'0.5px solid #18181b', flexShrink:0 }}>
+          <span style={{ fontSize:12, fontWeight:500, color:'#a1a1aa' }}>Emotional peak timeline</span>
+          {isDone && (
+            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+              <div style={{ width:6, height:6, borderRadius:99, background:'#639922', animation:'pulse 2s infinite' }} />
+              <span style={{ fontSize:10, color:'#71717a' }}>{NUGGETS.length} golden nuggets detected</span>
             </div>
           )}
         </div>
 
-        <div className="section-label">Analysis settings</div>
-        <div className="px-4">
-            {[
-                { l: "Clip duration", v: "45–60 sec", color: "var(--brand-purple)" },
-                { l: "Peak detection", v: "Gemini + Librosa", color: "var(--accent-green)" },
-                { l: "Face tracking", v: "toggle", on: true },
-                { l: "Karaoke captions", v: "toggle", on: true },
-                { l: "Hook headline", v: "toggle", on: true },
-                { l: "Output format", v: "9:16 TikTok", color: "var(--accent-amber)" }
-            ].map((s, i) => (
-                <div key={i} className="flex items-center justify-between h-9 border-b border-dim" style={{ borderColor: '#18181b' }}>
-                    <span style={{ fontSize: 12, color: '#71717a' }}>{s.l}</span>
-                    {s.v === 'toggle' ? (
-                        <div className={`toggle-track ${s.on ? 'toggle-on' : ''}`} style={{ width: 28, height: 16, borderRadius: 99, background: s.on ? 'var(--brand-purple)' : '#161618', position: 'relative' }}>
-                            <div style={{ width: 12, height: 12, background: 'white', borderRadius: 99, position: 'absolute', top: 2, left: s.on ? 14 : 2, transition: 'all 150ms ease' }} />
-                        </div>
-                    ) : (
-                        <span className="badge" style={{ 
-                            background: s.l === "Clip duration" ? 'var(--brand-purple-bg)' : 
-                                        s.l === "Peak detection" ? 'var(--accent-green-bg)' : 'var(--accent-amber-bg)',
-                            color:      s.l === "Clip duration" ? 'var(--brand-purple-text)' : 
-                                        s.l === "Peak detection" ? 'var(--accent-green-text)' : 'var(--accent-amber-text)'
-                        }}>
-                            {s.v}
-                        </span>
-                    )}
-                </div>
-            ))}
-        </div>
-      </main>
-
-      {/* ─── Center Panel: Timeline & Nuggets ─── */}
-      <main className="panel flex-1">
-        <div className="flex items-center justify-between h-[44px] px-4 border-b border-dim" style={{ borderColor: '#18181b' }}>
-            <span style={{ fontSize: 12, fontWeight: 500, color: '#a1a1aa' }}>Emotional peak timeline</span>
-            {isDemoMode && !isProcessing && (
-                <div className="flex items-center gap-2">
-                    <div className="pulse-dot" />
-                    <span style={{ fontSize: 10, color: '#71717a' }}>3 golden nuggets detected</span>
-                </div>
-            )}
-        </div>
-
-        <div className="p-4">
-            {isProcessing ? (
-                <div className="flex flex-col gap-3 py-6 animate-fade-in">
-                    {PROCESSING_STEPS.map((step, i) => {
-                        const isDone = i + 1 < currentStep || (currentStep === 4 && progress === 100)
-                        const isActive = i + 1 === currentStep
-                        return (
-                            <div key={i} className="flex items-center justify-between px-3 h-10 card" style={{ borderLeft: isActive ? '2px solid var(--brand-purple)' : '0.5px solid #27272a' }}>
-                                <div className="flex items-center gap-3">
-                                    {isDone ? <CheckCircle2 size={14} color="var(--accent-green)" /> : <Loader2 size={14} color={isActive ? "var(--accent-amber)" : "#52525b"} className={isActive ? "animate-spin" : ""} />}
-                                    <span style={{ fontSize: 12, color: isDone ? '#fafafa' : '#a1a1aa' }}>{step.name}</span>
-                                </div>
-                                <span className="badge" style={{ background: isDone ? 'var(--accent-green-bg)' : isActive ? 'var(--accent-amber-bg)' : '#161618', color: isDone ? 'var(--accent-green-text)' : isActive ? 'var(--accent-amber-text)' : '#52525b' }}>
-                                    {isDone ? "Done" : isActive ? step.engine : "Queued"}
-                                </span>
-                            </div>
-                        )
-                    })}
-                    <div style={{ height: 4, background: '#1c1c1f', borderRadius: 4, marginTop: 12, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: 'var(--brand-purple)', width: `${progress}%`, transition: 'width 150ms ease' }} />
+        <div style={{ flex:1, padding:16, overflowY:'auto', display:'flex', flexDirection:'column', gap:12 }}>
+          {isProcessing ? (
+            /* Processing View */
+            <div style={{ display:'flex', flexDirection:'column', gap:10, paddingTop:16 }}>
+              {STEPS.map((st, i) => {
+                const done = i+1 < step || (step===4 && prog>=100)
+                const active = i+1 === step
+                return (
+                  <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 12px', height:40, background:'#0d0d0f', border:'0.5px solid #27272a', borderRadius:8, borderLeft: active ? '2px solid #7F77DD' : undefined }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      {done ? <CheckCircle2 size={14} color="#639922" /> : <Loader2 size={14} color={active ? '#EF9F27' : '#52525b'} style={active ? { animation:'spin 1s linear infinite' } : {}} />}
+                      <span style={{ fontSize:12, color: done ? '#fafafa' : '#a1a1aa' }}>{st.name}</span>
                     </div>
-                </div>
-            ) : (
-                <>
-                    <div className="waveform-container relative mb-2">
-                        {renderWaveform()}
-                        {/* Peak Overlays */}
-                        {isDemoMode && MOCK_NUGGETS.map(n => (
-                            <div 
-                              key={n.id}
-                              style={{ 
-                                position: 'absolute', left: `${n.peakX}%`, top: 0, bottom: 0, width: selectedNugget?.id === n.id ? 4 : 2, 
-                                backgroundColor: n.id === 1 ? '#7F77DD' : n.id === 2 ? '#EF9F27' : '#5DCAA5',
-                                transition: 'width 150ms ease'
-                              }}
-                            >
-                                <span style={{ position: 'absolute', top: -16, left: -10, fontSize: 9, color: n.id === 1 ? '#7F77DD' : n.id === 2 ? '#EF9F27' : '#5DCAA5', fontWeight: 500 }}>Peak {n.id}</span>
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex justify-between mb-6">
-                        {["0:00", "15:00", "30:00", "45:00", "60:00"].map(t => <span key={t} style={{ fontSize: 9, color: '#3f3f46' }}>{t}</span>)}
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-1.5 mb-6">
-                        {[
-                          { l: "Nuggets found", v: isDemoMode ? "3" : "0" },
-                          { l: "Top virality score", v: isDemoMode ? "91%" : "-" },
-                          { l: "Total clip time", v: isDemoMode ? "2:47" : "-" }
-                        ].map((s, i) => (
-                          <div key={i} className="card p-3">
-                            <div style={{ fontSize: 18, fontWeight: 500, color: '#fafafa' }}>{s.v}</div>
-                            <div style={{ fontSize: 10, color: '#52525b', marginTop: 2 }}>{s.l}</div>
-                          </div>
-                        ))}
-                    </div>
-
-                    <div className="flex flex-col gap-2">
-                        {isDemoMode ? MOCK_NUGGETS.map(n => (
-                            <div 
-                                key={n.id} 
-                                className="card flex gap-4 p-3 cursor-pointer"
-                                style={{ borderColor: selectedNugget?.id === n.id ? 'var(--brand-purple)' : 'var(--border-std)' }}
-                                onClick={() => setSelectedNugget(n)}
-                            >
-                                <div style={{ width: 48 }} className="flex flex-col items-center">
-                                    <span style={{ fontSize: 18, fontWeight: 500, color: n.color }}>{n.score}%</span>
-                                    <span style={{ fontSize: 9, color: '#52525b', textAlign: 'center' }}>Virality score</span>
-                                </div>
-                                <div className="flex-1">
-                                    <h4 style={{ fontSize: 13, fontWeight: 500, color: '#d4d4d8', lineHeight: 1.4 }}>{n.headline}</h4>
-                                    <div className="flex items-center gap-3 mt-2">
-                                        <span className="badge" style={{ 
-                                            background: n.id === 1 ? 'var(--brand-purple-bg)' : n.id === 2 ? 'var(--accent-amber-bg)' : 'var(--accent-green-bg)',
-                                            color:      n.id === 1 ? 'var(--brand-purple-text)' : n.id === 2 ? 'var(--accent-amber-text)' : 'var(--accent-green-text)'
-                                        }}>
-                                            {n.category}
-                                        </span>
-                                        <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#52525b' }}>{n.time}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        )) : (
-                           <div className="flex flex-col items-center justify-center py-12 border-std rounded-xl bg-surface border-dashed">
-                               <Radio size={24} color="#1c1c1f" />
-                               <span style={{ fontSize: 11, color: '#3f3f46', marginTop: 8, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Process video to find nuggets</span>
-                           </div>
-                        )}
-                    </div>
-                </>
-            )}
-        </div>
-      </main>
-
-      {/* ─── Right Panel: Preview & Export ─── */}
-      <main className="panel" style={{ width: 280, borderRight: 'none' }}>
-        <div className="section-label">Clip preview</div>
-        <div className="px-4 flex flex-col gap-4">
-            <div className="flex gap-2">
-                <div className="flex-1 bg-surface border-std rounded-lg relative overflow-hidden" style={{ aspectRatio: '16/9' }}>
-                    <div style={{ position: 'absolute', left: '25%', top: 0, bottom: 0, width: '38%', background: 'rgba(127, 119, 221, 0.12)', borderLeft: '1px solid var(--brand-purple)', borderRight: '1px solid var(--brand-purple)' }} />
-                    <div className="badge" style={{ position: 'absolute', bottom: 4, left: 4, background: '#18181b', color: '#71717a', fontSize: 9 }}>Original 16:9</div>
-                </div>
-                <div style={{ width: 68, height: 120, background: '#0d0d0f', border: '0.5px solid #1c1c1f' }} className="rounded-lg relative overflow-hidden">
-                    <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', background: 'rgba(0,0,0,0.7)', color: 'white', padding: '2px 4px', borderRadius: 4, fontSize: 8, whiteSpace: 'nowrap' }}>
-                        the only metric that
-                    </div>
-                    <div className="badge" style={{ position: 'absolute', bottom: 4, left: 4, background: '#18181b', color: '#71717a', fontSize: 8 }}>9:16 Output</div>
-                </div>
+                    <span style={S.badge(done ? '#173404' : active ? '#412402' : '#161618', done ? '#97C459' : active ? '#FAC775' : '#52525b')}>
+                      {done ? 'Done' : active ? st.engine : 'Queued'}
+                    </span>
+                  </div>
+                )
+              })}
+              <div style={{ height:4, background:'#1c1c1f', borderRadius:4, overflow:'hidden', marginTop:8 }}>
+                <div style={{ height:'100%', background:'#534AB7', width:`${prog}%`, transition:'width 300ms ease', borderRadius:4 }} />
+              </div>
+              <p style={{ textAlign:'center', marginTop:12, fontSize:10, color:'#71717a', letterSpacing:'0.05em' }}>JOB ID: {job?.job_id || 'Generating...'}</p>
             </div>
-
-            <div className="mt-4">
-                {[
-                    { l: "Burn captions", on: true },
-                    { l: "Add hook title card", on: true }
-                ].map((s, i) => (
-                    <div key={i} className="flex items-center justify-between h-9 border-b border-dim" style={{ borderColor: '#18181b' }}>
-                        <span style={{ fontSize: 12, color: '#71717a' }}>{s.l}</span>
-                        <div className={`toggle-track ${s.on ? 'toggle-on' : ''}`} style={{ width: 28, height: 16, borderRadius: 99, background: s.on ? 'var(--brand-purple)' : '#161618', position: 'relative' }}>
-                            <div style={{ width: 12, height: 12, background: 'white', borderRadius: 99, position: 'absolute', top: 2, left: s.on ? 14 : 2, transition: 'all 150ms ease' }} />
-                        </div>
-                    </div>
+          ) : (
+            /* Timeline + Nuggets View */
+            <>
+              {/* Waveform */}
+              <div style={{ background:'#0d0d0f', borderRadius:8, height:72, padding:'6px 8px', display:'flex', alignItems:'flex-end', gap:1, position:'relative', flexShrink:0 }}>
+                {bars.map((b, i) => (
+                  <div key={i} style={{ flex:1, height:`${b.h}%`, background:b.c, borderRadius:'2px 2px 0 0', opacity: 0.45 + (b.h/100)*0.55, cursor: b.matchedPeak ? 'pointer' : 'default', transition:'opacity 120ms' }}
+                    onClick={() => { if (b.matchedPeak) setSel(b.matchedPeak) }}
+                    onMouseEnter={e => e.target.style.opacity='1'}
+                    onMouseLeave={e => e.target.style.opacity = String(0.45 + (b.h/100)*0.55)}
+                  />
                 ))}
-            </div>
+                
+                {/* Visual Peak Overlays */}
+                {isDone && NUGGETS.map((n, idx) => {
+                    const peakPct = (n.time / (job?.duration || 3600)) * 100
+                    const c = getPeakColor(idx)
+                    return (
+                        <div key={n.headline} style={{ position:'absolute', left:`${peakPct}%`, top:0, bottom:0, width: sel?.headline===n.headline ? 3 : 1.5, background: c, transition:'width 150ms', pointerEvents:'none' }}>
+                            <span style={{ position:'absolute', top:-14, left:-12, fontSize:8, color: c, fontWeight:500, whiteSpace:'nowrap' }}>Peak {idx+1}</span>
+                        </div>
+                    )
+                })}
+              </div>
 
-            <button 
-              className="btn mt-2 w-full active:scale-[0.98]" 
-              style={{ background: '#534AB7', color: 'white', height: 40, borderRadius: 8, fontSize: 13 }}
-            >
-                <DownloadCloud size={16} color="white" className="mr-2" /> Export clip
-            </button>
+              <div style={{ display:'flex', justifyContent:'space-between', padding:'0 4px' }}>
+                {['0:00','15:00','30:00','45:00','60:00'].map(t => <span key={t} style={{ fontSize:9, color:'#3f3f46' }}>{t}</span>)}
+              </div>
+
+              {/* Stat Cards */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:6 }}>
+                {[
+                  { v: isDone ? NUGGETS.length : '—', l:'Nuggets found' },
+                  { v: isDone && NUGGETS.length>0 ? `${Math.round(NUGGETS[0].score*100)}%` : '—', l:'Top virality score' },
+                  { v: isDone ? (() => {
+                      const totalSecs = NUGGETS.reduce((acc, n) => acc + (n.end - n.start), 0)
+                      return `${Math.floor(totalSecs/60)}:${(totalSecs%60).toFixed(0).padStart(2,'0')}`
+                  })() : '—', l:'Total clip time' },
+                ].map((c,i) => (
+                  <div key={i} style={{ background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, padding:10 }}>
+                    <div style={{ fontSize:18, fontWeight:500 }}>{c.v}</div>
+                    <div style={{ fontSize:10, color:'#52525b', marginTop:2 }}>{c.l}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Nugget Cards */}
+              <div style={{ display:'flex', flexDirection:'column', gap:8, flex:1, overflowY:'auto' }}>
+                {isDone ? NUGGETS.map((n, idx) => {
+                   const color = getPeakColor(idx)
+                   const pill = getCatPill(idx)
+                   return (
+                  <div key={idx} onClick={() => setSel(n)} style={{ display:'flex', gap:14, padding:12, background:'#0d0d0f', border: sel?.headline===n.headline ? `1px solid ${color}` : '0.5px solid #1c1c1f', borderRadius:10, cursor:'pointer', transition:'border-color 150ms' }}>
+                    <div style={{ width:44, display:'flex', flexDirection:'column', alignItems:'center', flexShrink:0 }}>
+                      <span style={{ fontSize:18, fontWeight:500, color: color }}>{Math.round(n.score * 100)}%</span>
+                      <span style={{ fontSize:9, color:'#52525b' }}>Virality</span>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6, flex:1, minWidth:0 }}>
+                      <span style={{ fontSize:13, fontWeight:500, color:'#d4d4d8', lineHeight:'1.4' }}>{n.headline || n.clip_title}</span>
+                      <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                        <span style={S.badge(pill.bg, pill.c)}>{n.reason || 'Peak'}</span>
+                        <span style={{ fontSize:10, fontFamily:'monospace', color:'#52525b' }}>{Math.floor(n.time/60)}:{(n.time % 60).toFixed(0).padStart(2,'0')}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}) : (
+                  <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', gap:10, border:'0.5px dashed #27272a', borderRadius:10, minHeight:120 }}>
+                    <Radio size={22} color="#27272a" />
+                    <span style={{ fontSize:10, color:'#3f3f46', letterSpacing:'0.08em', textTransform:'uppercase' }}>Process a video to find nuggets</span>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
         </div>
-      </main>
+      </div>
 
-      {/* ─── Bottom Bar ─── */}
-      <footer className="bottom-bar">
-        <div className="flex items-center gap-5">
-            {[
-                { l: "GPU Acceleration", v: "ENABLED", color: "#639922" },
-                { l: "Librosa Audio Analysis", v: isDemoMode ? "READY" : "IDLE", color: isDemoMode ? "#639922" : "#52525b" },
-                { l: "Whisper Transcription", v: isDemoMode ? "COMPLETE" : "IN PROGRESS", color: isDemoMode ? "#639922" : "#EF9F27" }
-            ].map((s, i) => (
-                <div key={i} className="flex items-center gap-2" style={{ fontSize: 10, color: '#52525b' }}>
-                    <div style={{ width: 5, height: 5, borderRadius: 99, background: s.color }} />
-                    <span>{s.l}: <span style={{ color: '#71717a' }}>{s.v}</span></span>
+      {/* ═══ RIGHT PANEL ═══ */}
+      <div style={{ ...S.panel({}), width:280, borderRight:'none' }}>
+        <div style={S.sectionLabel}>Clip preview</div>
+        <div style={{ padding:'0 16px', display:'flex', flexDirection:'column', gap:16, flex:1 }}>
+
+          {/* Preview Pair */}
+          <div style={{ display:'flex', gap:8, width:'100%' }}>
+            {/* 16:9 Source */}
+            <div style={{ flex:1, aspectRatio:'16/9', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden' }}>
+              <div style={{ position:'absolute', left:'25%', top:0, bottom:0, width:'38%', background:'rgba(127,119,221,0.1)', borderLeft:'1px solid #7F77DD', borderRight:'1px solid #7F77DD', zIndex:10 }} />
+              
+              {sel?.clip_url ? (
+                  <video src={sel.clip_url} autoPlay loop muted playsInline style={{ width:'100%', height:'100%', objectFit:'cover', opacity:0.6 }} />
+              ) : null}
+
+              <span style={{ position:'absolute', bottom:4, left:6, zIndex:20, fontSize:8, color:'#52525b', background:'#18181b', padding:'1px 5px', borderRadius:4 }}>Source 16:9</span>
+            </div>
+            
+            {/* 9:16 Output */}
+            <div style={{ width:76, aspectRatio:'9/16', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden', display:'flex', alignItems:'flex-end', justifyContent:'center', flexShrink:0 }}>
+              
+              {sel?.clip_url ? (
+                  <video src={sel.clip_url} autoPlay loop controls playsInline style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', objectFit:'cover', zIndex:5 }} />
+              ) : null}
+
+              <span style={{ position:'absolute', bottom:4, left:4, zIndex:20, fontSize:7, color:'#52525b', background:'#18181b', padding:'1px 4px', borderRadius:3 }}>9:16 Output</span>
+            </div>
+          </div>
+
+          <div style={{ marginTop:'auto' }}>
+            {['Burn captions','Add hook title card'].map((l,i) => (
+                <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', height:32, borderBottom:'0.5px solid #18181b' }}>
+                <span style={{ fontSize:11, color:'#71717a' }}>{l}</span>
+                <Toggle on />
                 </div>
             ))}
+            <button style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', height:40, background:'#534AB7', color:'#fff', fontSize:13, fontWeight:500, borderRadius:8, marginTop:12, transition:'background 120ms', opacity: isDone ? 1 : 0.5 }}
+                disabled={!isDone}
+                onMouseEnter={e => e.currentTarget.style.background='#4a41a3'}
+                onMouseLeave={e => e.currentTarget.style.background='#534AB7'}>
+                {sel?.clip_url ? (
+                    <a href={`/api/clips/${sel.clip_id}/download`} style={{ color:'inherit', textDecoration:'none', display:'flex', alignItems:'center', gap:8 }} download>
+                        <DownloadCloud size={16} /> Export clip
+                    </a>
+                ) : (
+                    <><DownloadCloud size={16} /> Export clip</>
+                )}
+            </button>
+          </div>
         </div>
-        <div style={{ marginLeft: 'auto', fontSize: 10, color: '#3f3f46' }}>{new Date().toLocaleTimeString()}</div>
+      </div>
+
+      {/* ═══ BOTTOM BAR ═══ */}
+      <footer style={S.bottomBar}>
+        <div style={{ display:'flex', alignItems:'center', gap:20 }}>
+          {[
+            { l:'GPU Acceleration', v:'ENABLED', c:'#639922' },
+            { l:'Librosa Audio Analysis', v: isProcessing ? 'POLLING' : isDone ? 'READY' : 'IDLE', c: isProcessing ? '#EF9F27' : isDone ? '#639922' : '#52525b' },
+            { l:'FastAPI Backend', v: job ? 'CONNECTED' : 'STANDBY', c: job ? '#639922' : '#52525b' },
+          ].map((s,i) => (
+            <div key={i} style={{ display:'flex', alignItems:'center', gap:6, fontSize:10, color:'#52525b' }}>
+              <div style={{ width:5, height:5, borderRadius:99, background:s.c, flexShrink:0 }} />
+              <span>{s.l}: <span style={{ color:'#71717a' }}>{s.v}</span></span>
+            </div>
+          ))}
+        </div>
+        <span style={{ fontSize:10, color:'#3f3f46' }}>{new Date().toLocaleTimeString()}</span>
       </footer>
     </div>
   )
 }
-
-export default App

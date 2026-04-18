@@ -1,226 +1,25 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&family=Outfit:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap');
 
-/* ══════════════════════════════════════════════════════════════════════════
-   DESIGN SYSTEM — OBSIDIAN PRECISION
-   Theme: Professional AI Tool
-   ══════════════════════════════════════════════════════════════════════════ */
-
-:root {
-  --bg-base: #09090b;
-  --bg-surface: #0d0d0f;
-  --bg-elevated: #161618;
-  --bg-active: #1c1c1f;
-  
-  --border-dim: 0.5px solid #1c1c1f;
-  --border-std: 0.5px solid #27272a;
-  --border-active: 0.5px solid #3f3f46;
-  
-  --text-primary: #fafafa;
-  --text-secondary: #a1a1aa;
-  --text-muted: #52525b;
-  --text-dim: #3f3f46;
-  
-  --brand-purple: #7F77DD;
-  --brand-purple-bg: #26215C;
-  --brand-purple-text: #AFA9EC;
-  
-  --accent-amber: #EF9F27;
-  --accent-amber-bg: #412402;
-  --accent-amber-text: #FAC775;
-  
-  --accent-teal: #5DCAA5;
-  --accent-teal-bg: #04342C;
-  --accent-teal-text: #5DCAA5;
-  
-  --accent-green: #639922;
-  --accent-green-bg: #173404;
-  --accent-green-text: #97C459;
-  
-  --accent-coral: #F0997B;
-  --accent-coral-bg: #4A1B0C;
-  --accent-coral-text: #F0997B;
-}
-
-/* ─── Global Reset ───────────────────────────────────────────────────────── */
-*, *::before, *::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  font-family: 'Inter', system-ui, sans-serif;
-  background-color: var(--bg-base);
-  color: var(--text-primary);
-  line-height: 1.4;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #09090b;
+  color: #fafafa;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  line-height: 1.4;
 }
 
-button {
-  all: unset;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 150ms ease;
-}
+#root { height: 100vh; width: 100vw; }
 
-/* ─── Layout Shell ───────────────────────────────────────────────────────── */
-.obsidian-shell {
-  display: grid;
-  grid-template-columns: 56px 320px 1fr 280px;
-  grid-template-rows: 52px 1fr 40px;
-  height: 100vh;
-  width: 100vw;
-}
+button { all: unset; cursor: pointer; }
 
-.top-bar {
-  grid-column: 1 / -1;
-  grid-row: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 16px;
-  border-bottom: var(--border-std);
-}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
 
-.sidebar {
-  grid-column: 1;
-  grid-row: 2;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 12px 0;
-  border-right: var(--border-std);
-}
-
-.bottom-bar {
-  grid-column: 1 / -1;
-  grid-row: 3;
-  display: flex;
-  align-items: center;
-  padding: 0 16px;
-  background: var(--bg-surface);
-  border-top: var(--border-dim);
-}
-
-.panel {
-  grid-row: 2;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-right: var(--border-std);
-}
-
-.panel:last-child {
-  border-right: none;
-}
-
-/* ─── Components ─────────────────────────────────────────────────────────── */
-
-.section-label {
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  padding: 20px 16px 8px;
-}
-
-.card {
-  background: var(--bg-surface);
-  border: var(--border-std);
-  border-radius: 8px;
-  transition: border-color 150ms ease;
-}
-
-.card:hover {
-  border-color: var(--text-dim);
-}
-
-.badge {
-  font-size: 10px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 99px;
-  white-space: nowrap;
-}
-
-.toggle-track {
-  width: 28px;
-  height: 16px;
-  border-radius: 99px;
-  background: var(--bg-elevated);
-  position: relative;
-  transition: background 150ms ease;
-}
-
-.toggle-dot {
-  width: 12px;
-  height: 12px;
-  background: white;
-  border-radius: 99px;
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  transition: transform 150ms ease;
-}
-
-.toggle-on .toggle-track { background: var(--brand-purple); }
-.toggle-on .toggle-dot { transform: translateX(12px); }
-
-/* ─── Waveform ───────────────────────────────────────────────────────────── */
-.waveform-container {
-  background: var(--bg-surface);
-  border-radius: 8px;
-  height: 72px;
-  padding: 6px 8px;
-  display: flex;
-  align-items: flex-end;
-  gap: 1.5px;
-}
-
-.waveform-bar {
-  flex: 1;
-  background: #27272a;
-  border-radius: 2px 2px 0 0;
-  transition: opacity 150ms ease;
-  min-width: 1px;
-}
-
-.waveform-bar:hover {
-  opacity: 1 !important;
-  background: var(--text-dim);
-}
-
-/* ─── Progress Sequence ──────────────────────────────────────────────────── */
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.pulse-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 99px;
-  background: var(--accent-green);
-  animation: pulse 2s infinite;
-}
-
-/* ─── Custom Scrollbar ───────────────────────────────────────────────────── */
-::-webkit-scrollbar {
-  width: 4px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--border-std);
-  border-radius: 10px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-dim);
-}
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #27272a; border-radius: 4px; }

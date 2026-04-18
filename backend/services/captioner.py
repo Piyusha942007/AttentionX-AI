@@ -162,10 +162,14 @@ def burn_captions(
         ass_path = _write_ass_file(words, clip_start)
         logger.info(f"ASS subtitle file written: {ass_path} ({len(words)} words)")
 
+        # FFMpeg's subtitle filter crashes on Windows absolute paths (C:\) because
+        # ':' implies a filter chain link. We must swap slashes and escape the colon.
+        ffmpeg_path = ass_path.replace("\\", "/").replace(":", "\\:")
+
         cmd = [
             FFMPEG_EXE, "-y",
             "-i", clip_path,
-            "-vf", f"ass={ass_path}",
+            "-vf", f"ass='{ffmpeg_path}'",
             "-c:v", "libx264",
             "-preset", "fast",
             "-c:a", "copy",

@@ -34,7 +34,7 @@ from models import JobCreateResponse, JobResponse, JobStatus, Peak
 from pydantic import BaseModel, HttpUrl
 
 class YouTubeJobRequest(BaseModel):
-    url: HttpUrl
+    url: str
 
 from worker import process_job
 

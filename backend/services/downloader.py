@@ -33,6 +33,8 @@ def download_youtube_video(url: str, output_dir: str) -> dict:
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
+        'retries': 15,
+        'socket_timeout': 60,
     }
     
     try:
