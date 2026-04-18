@@ -2,7 +2,7 @@ services:
   - type: web
     name: attentionx-backend
     env: docker
-    plan: starter # Starter ($7/mo) provides 512MB RAM. Tiny Whisper is now forced to fit this limit. 512MB is the absolute minimum; if it OOMs on long videos, you'll need the 1GB RAM tier.
+    plan: free # Free Tier (512MB RAM). This will 'sleep' after 15 mins of inactivity. Tiny Whisper is used to fit this limit.
     region: frankfurt # Choose closest region to users
     dockerCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
