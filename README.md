@@ -8,7 +8,7 @@
 
 **Turn a 60-minute workshop into a week of viral content — automatically.**
 
-[![Demo Video](https://img.shields.io/badge/▶%20Watch%20Demo-Google%20Drive-4285F4?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/your-link-here)
+[![Demo Video](https://img.shields.io/badge/▶%20Watch%20Demo-Google%20Drive-4285F4?style=for-the-badge&logo=googledrive&logoColor=white)](https://drive.google.com/file/d/1ZBfFm8Yr2ZhZA5N2Tjnm4bRpFJSWz3bY/view?usp=sharing)
 [![Live App](https://img.shields.io/badge/🚀%20Live%20App-Deployed-22c55e?style=for-the-badge)](https://attention-x-ai.vercel.app)
 [![GitHub](https://img.shields.io/badge/GitHub-Public%20Repo-181717?style=for-the-badge&logo=github)](https://github.com/Piyusha942007/AttentionX-AI)
 
@@ -28,7 +28,7 @@ AttentionX closes that gap. Upload one session → get a week's worth of viral, 
 
 ## 🎬 Demo
 
-> **[▶ Watch the full demo on Google Drive](https://drive.google.com/your-link-here)**
+> **[▶ Watch the full demo on Google Drive](https://drive.google.com/file/d/1ZBfFm8Yr2ZhZA5N2Tjnm4bRpFJSWz3bY/view?usp=sharing)**
 
 The demo walks through:
 1. Uploading a 60-minute mentorship session
@@ -259,7 +259,7 @@ attentionx/
 
 The demo video is hosted on Google Drive:
 
-**[▶ Watch Demo — Google Drive](https://drive.google.com/your-link-here)**
+**[▶ Watch Demo — Google Drive](https://drive.google.com/file/d/1ZBfFm8Yr2ZhZA5N2Tjnm4bRpFJSWz3bY/view?usp=sharing)**
 
 *Replace the link above with your actual Google Drive share link before submission.*
 
