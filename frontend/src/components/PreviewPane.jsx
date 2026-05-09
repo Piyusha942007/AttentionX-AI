@@ -1,9 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react'
-import { Play, Maximize2, Scissors, Type, Loader2, Copy } from 'lucide-react'
+import { Play, Maximize2, Scissors, Type, Loader2, Copy, Download, Sparkles } from 'lucide-react'
 
-const PreviewPane = ({ selectedPeak }) => {
+const COLORS = [
+    { name: 'Yellow', hex: '#FFE234', ass: '&H0034E2FF' },
+    { name: 'Green', hex: '#00FF00', ass: '&H0000FF00' },
+    { name: 'Cyan', hex: '#00FFFF', ass: '&H00FFFF00' },
+    { name: 'Pink', hex: '#FF00FF', ass: '&H00FF00FF' },
+]
+
+const PreviewPane = ({ selectedPeak, jobId }) => {
     const [activeWordIndex, setActiveWordIndex] = useState(-1)
     const [currentTime, setCurrentTime] = useState(0)
+    const [selectedColor, setSelectedColor] = useState(COLORS[0])
+    const [isExporting, setIsExporting] = useState(false)
+    const [exportUrl, setExportUrl] = useState(null)
     const videoRef = useRef(null)
 
     // Sync simulation with video playback if it exists
@@ -19,6 +29,32 @@ const PreviewPane = ({ selectedPeak }) => {
                     setActiveWordIndex(wordIdx)
                 }
             }
+        }
+    }
+
+    const handleExport = async () => {
+        if (!jobId || !selectedPeak?.clip_id) return
+        
+        setIsExporting(true)
+        setExportUrl(null)
+        
+        try {
+            const res = await fetch(`/api/clips/${jobId}/${selectedPeak.clip_id}/export`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caption_color: selectedColor.name })
+            })
+            
+            if (res.ok) {
+                const data = await res.json()
+                setExportUrl(data.download_url)
+                // Auto-open download in new tab
+                window.open(data.download_url, '_blank')
+            }
+        } catch (error) {
+            console.error('Export error:', error)
+        } finally {
+            setIsExporting(false)
         }
     }
 
@@ -68,7 +104,9 @@ const PreviewPane = ({ selectedPeak }) => {
                     <span className="text-xxs uppercase font-black text-muted flex items-center gap-2">
                         <Scissors className="w-3.5 h-3.5" /> Source Context
                     </span>
-                    <span className="text-xxs font-black text-amber uppercase tracking-[0.2em] bg-amber-500/10 px-2 py-0.5 rounded">Dynamic Smart Tracking [ON]</span>
+                    <span className="text-xxs font-black text-emerald-400 uppercase tracking-[0.2em] bg-emerald-500/10 px-2 py-0.5 rounded flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" /> Dynamic Smart Tracking [ON]
+                    </span>
                 </div>
                 <div className="flex-1 bg-black rounded-3xl relative overflow-hidden border border-white-10 shadow-2xl group ring-1 ring-white/5">
                     {/* Simulated 16:9 Frame */}
@@ -96,6 +134,39 @@ const PreviewPane = ({ selectedPeak }) => {
                         </div>
                     </div>
                 </div>
+
+                {/* Bottom Tools */}
+                <div className="mt-6 flex items-center justify-between bg-white/2 p-4 rounded-2xl border border-white/5">
+                    <div className="flex flex-col gap-2">
+                        <span className="text-[9px] font-black text-muted uppercase tracking-widest">Caption Style</span>
+                        <div className="flex gap-2">
+                            {COLORS.map(color => (
+                                <button
+                                    key={color.name}
+                                    onClick={() => setSelectedColor(color)}
+                                    className={`w-6 h-6 rounded-full border-2 transition-transform hover:scale-110 ${selectedColor.name === color.name ? 'border-white scale-110' : 'border-transparent opacity-40 hover:opacity-100'}`}
+                                    style={{ backgroundColor: color.hex }}
+                                />
+                            ))}
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={handleExport}
+                        disabled={isExporting || !selectedPeak.clip_url}
+                        className={`flex items-center gap-2 px-6 py-3 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all ${isExporting ? 'bg-white/5 text-muted' : 'bg-grad-premium text-dark shadow-lg shadow-amber-500/20 active:scale-95'}`}
+                    >
+                        {isExporting ? (
+                            <>
+                                <Loader2 className="w-4 h-4 animate-spin" /> Rendering...
+                            </>
+                        ) : (
+                            <>
+                                <Download className="w-4 h-4" /> Export Video
+                            </>
+                        )}
+                    </button>
+                </div>
             </div>
 
             {/* Right: Vertical 9:16 Output (iPhone Frame) */}
@@ -104,7 +175,10 @@ const PreviewPane = ({ selectedPeak }) => {
                     <span className="text-xxs uppercase font-black text-muted flex items-center gap-2">
                          Smart Crop Preview
                     </span>
-                    <Copy className="w-3.5 h-3.5 text-muted hover:text-white cursor-pointer" />
+                    <div className="flex gap-2">
+                        <Type className="w-3.5 h-3.5 text-muted" />
+                        <Copy className="w-3.5 h-3.5 text-muted hover:text-white cursor-pointer" />
+                    </div>
                 </div>
                 
                 <div className="phone-frame animate-fade-in-up">
@@ -113,6 +187,7 @@ const PreviewPane = ({ selectedPeak }) => {
                     {selectedPeak.clip_url ? (
                         <video 
                             ref={videoRef}
+                            key={selectedPeak.clip_url}
                             src={selectedPeak.clip_url}
                             onTimeUpdate={handleTimeUpdate}
                             className="w-full h-full object-cover"
@@ -128,7 +203,7 @@ const PreviewPane = ({ selectedPeak }) => {
                     )}
 
                     {/* Captions */}
-                    <div className="absolute bottom-[25%] inset-x-0 px-5 flex flex-wrap justify-center gap-x-1.5 gap-y-1 z-10">
+                    <div className="absolute bottom-[25%] inset-x-0 px-5 flex flex-wrap justify-center gap-x-1.5 gap-y-1 z-10 pointer-events-none">
                         {selectedPeak.words?.map((word, idx) => {
                             if (activeWordIndex === -1) return null
                             const isVisible = Math.abs(idx - activeWordIndex) < 3
@@ -137,9 +212,10 @@ const PreviewPane = ({ selectedPeak }) => {
                             return (
                                 <span 
                                     key={idx}
+                                    style={{ color: idx === activeWordIndex ? selectedColor.hex : 'rgba(255,255,255,0.6)' }}
                                     className={`
-                                        text-[10px] font-black uppercase tracking-tight transition-all duration-200
-                                        ${idx === activeWordIndex ? 'text-amber scale-110' : 'text-white/60'}
+                                        text-[11px] font-black uppercase tracking-tight transition-all duration-200 drop-shadow-[0_2px_4px_rgba(0,0,0,0.8)]
+                                        ${idx === activeWordIndex ? 'scale-110' : ''}
                                     `}
                                 >
                                     {word.word}

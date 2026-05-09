@@ -8,6 +8,7 @@ Implements the Viral Signal Algorithm from the PRD:
 """
 import subprocess
 import numpy as np
+import logging
 
 logger = logging.getLogger(__name__)
 

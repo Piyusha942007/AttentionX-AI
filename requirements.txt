@@ -15,7 +15,7 @@ google-genai
 # ─── Video Processing ───────────────────────────────────────────────────────
 mediapipe>=0.10.0
 opencv-python-headless>=4.9.0
-moviepy>=2.0.0
+
 
 # ─── Utilities ──────────────────────────────────────────────────────────────
 numpy>=1.26.0

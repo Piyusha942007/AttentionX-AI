@@ -33,10 +33,12 @@ except (ImportError, AttributeError):
 
 logger = logging.getLogger(__name__)
 
-CROP_W     = 608    # 9:16 output width at 1080p height
 FRAME_SKIP = 10     # Run MediaPipe every N frames (optimized for Free tier speed)
 SMOOTH_WIN = 30     # Rolling average window (frames)
+CROP_W     = 608    # 9:16 aspect ratio for 1080p height
 
+def get_crop_w(frame_h: int) -> int:
+    return int(frame_h * 9 / 16)
 
 def detect_face_centers(video_path: str) -> list[int]:
     """
@@ -48,6 +50,7 @@ def detect_face_centers(video_path: str) -> list[int]:
     cap         = cv2.VideoCapture(video_path)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     frame_w      = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h      = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     default_cx   = frame_w // 2
 
     # ── Fallback: Center-Crop ──────────────────────────────────────────────
@@ -62,13 +65,8 @@ def detect_face_centers(video_path: str) -> list[int]:
         min_detection_confidence=0.5,
     )
 
-    cap         = cv2.VideoCapture(video_path)
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_w      = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    default_cx   = frame_w // 2
-
     logger.info(
-        f"Face tracking: {total_frames} frames @ frame_w={frame_w}px, "
+        f"Face tracking: {total_frames} frames @ {frame_w}x{frame_h}px, "
         f"skip={FRAME_SKIP} → ~{total_frames // FRAME_SKIP} detections"
     )
 
@@ -76,6 +74,7 @@ def detect_face_centers(video_path: str) -> list[int]:
     keyframe_centers: list[float] = []
 
     frame_idx: int = 0
+    crop_w = get_crop_w(frame_h)
 
     while cap.isOpened():
         ret, frame = cap.read()
@@ -90,7 +89,7 @@ def detect_face_centers(video_path: str) -> list[int]:
                 bbox = results.detections[0].location_data.relative_bounding_box
                 cx   = (bbox.xmin + bbox.width / 2) * frame_w
                 # Clamp inside frame
-                cx   = max(CROP_W / 2, min(float(cx), frame_w - CROP_W / 2))
+                cx   = max(crop_w / 2, min(float(cx), frame_w - crop_w / 2))
             else:
                 cx = float(default_cx)
 
@@ -117,17 +116,19 @@ def detect_face_centers(video_path: str) -> list[int]:
     return smoothed.tolist()
 
 
-def get_crop_x(center_x: int, frame_w: int = 1920) -> int:
+def get_crop_x(center_x: int, frame_w: int, frame_h: int) -> int:
     """
-    Convert face center X to the left edge of the 608px crop window.
+    Convert face center X to the left edge of the crop window.
     Clamped so the window never goes outside the frame.
 
     Args:
         center_x: Smoothed face center X pixel position.
         frame_w:  Total frame width in pixels.
+        frame_h:  Total frame height in pixels.
 
     Returns:
         Left edge X of the crop window.
     """
-    x = int(center_x - CROP_W / 2)
-    return max(0, min(x, frame_w - CROP_W))
+    crop_w = get_crop_w(frame_h)
+    x = int(center_x - crop_w / 2)
+    return max(0, min(x, frame_w - crop_w))

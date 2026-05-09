@@ -10,6 +10,7 @@ with response_mime_type="application/json" (Gemini constrained decoding).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -60,59 +61,18 @@ If no suitable moment exists, return an empty array: []
 TRANSCRIPT:
 """
 
-_CHUNK_DURATION = 120.0  # seconds per chunk
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Chunking
-# ─────────────────────────────────────────────────────────────────────────────
-
-def _chunk_transcript(segments: list[dict]) -> list[tuple[float, float, str]]:
-    """
-    Split transcript segments into ~2-minute text chunks.
-
-    Returns:
-        List of (chunk_start, chunk_end, formatted_text) tuples.
-    """
-    if not segments:
-        return []
-
-    chunks: list[tuple[float, float, str]] = []
-    chunk_start = segments[0]["start"]
-    chunk_end   = chunk_start
-    lines: list[str] = []
-
-    for seg in segments:
-        # Flush when chunk exceeds target duration
-        if seg["start"] - chunk_start >= _CHUNK_DURATION and lines:
-            chunks.append((chunk_start, chunk_end, "\n".join(lines)))
-            chunk_start = seg["start"]
-            lines = []
-
-        lines.append(f"[{seg['start']:.1f}s] {seg['text']}")
-        chunk_end = seg["end"]
-
-    if lines:
-        chunks.append((chunk_start, chunk_end, "\n".join(lines)))
-
-    return chunks
+def _format_full_transcript(segments: list[dict]) -> str:
+    """Format the entire transcript for a single AI pass."""
+    return "\n".join([f"[{seg['start']:.1f}s] {seg['text']}" for seg in segments])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Gemini call
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
+async def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
     """
     Send a transcript chunk to Gemini and parse the JSON response.
-
-    Args:
-        text:            The timestamped transcript text.
-        force_json_mime: If True, uses response_mime_type="application/json"
-                         (constrained decoding — retry path).
-
-    Returns:
-        List of candidate peak dicts from Gemini.
     """
     config = {
         "temperature": 0.2,
@@ -123,19 +83,18 @@ def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
         config["response_mime_type"] = "application/json"
 
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash", # Latest stable flash model
+        # Using gemini-flash-latest: Resolves 404 issue in this environment
+        response = await client.aio.models.generate_content(
+            model="gemini-flash-latest", 
             contents=text,
             config=config,
         )
         
-        # New SDK provides parsed results directly if using response_mime_type
         if force_json_mime and response.parsed:
              return response.parsed if isinstance(response.parsed, list) else []
 
         raw = response.text.strip()
 
-        # Strip markdown code fences if Gemini wrapped the JSON
         if raw.startswith("```"):
             parts = raw.split("```")
             raw = parts[1] if len(parts) > 1 else raw
@@ -145,7 +104,6 @@ def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
         parsed = json.loads(raw)
         if isinstance(parsed, list):
             return parsed
-        # Sometimes Gemini wraps the array in an object
         if isinstance(parsed, dict):
             for v in parsed.values():
                 if isinstance(v, list):
@@ -155,15 +113,14 @@ def _call_gemini(text: str, *, force_json_mime: bool = False) -> list[dict]:
         logger.error(f"Gemini call failed: {e}")
         return []
 
-
-def _safe_call_gemini(text: str, chunk_label: str) -> list[dict]:
+async def _safe_call_gemini(text: str, chunk_label: str) -> list[dict]:
     """
     Call Gemini with automatic retry on JSON parse failure.
     """
-    peaks = _call_gemini(text, force_json_mime=False)
+    peaks = await _call_gemini(text, force_json_mime=False)
     if not peaks:
         logger.warning(f"{chunk_label}: Gemini returned no peaks, retrying with JSON MIME…")
-        peaks = _call_gemini(text, force_json_mime=True)
+        peaks = await _call_gemini(text, force_json_mime=True)
     return peaks
 
 
@@ -171,39 +128,27 @@ def _safe_call_gemini(text: str, chunk_label: str) -> list[dict]:
 # Public interface
 # ─────────────────────────────────────────────────────────────────────────────
 
-def analyze_transcript(segments: list[dict]) -> list[dict]:
+async def analyze_transcript(segments: list[dict]) -> list[dict]:
     """
-    Send transcript chunks to Gemini and collect candidate viral peaks.
-
-    Args:
-        segments: Whisper segment list (from transcriber.transcribe_video).
-
-    Returns:
-        Flat list of candidate peak dicts.  Each dict has:
-          start, end, gemini_score, reason, headline, clip_title
+    Send the ENTIRE transcript to Gemini in a single pass for maximum speed.
     """
-    chunks = _chunk_transcript(segments)
-    logger.info(f"Analyzing {len(chunks)} transcript chunks with Gemini…")
+    if not segments: return []
+    
+    full_text = _format_full_transcript(segments)
+    logger.info("Analyzing FULL transcript with Gemini Flash (Ultra-Fast Mode)...")
+
+    raw_peaks = await _safe_call_gemini(full_text, "Full Transcript")
 
     all_peaks: list[dict] = []
+    for p in raw_peaks:
+        all_peaks.append({
+            "start":        float(p.get("start",          0)),
+            "end":          float(p.get("end",            0)),
+            "gemini_score": float(p.get("virality_score", 0.5)),
+            "reason":       (p.get("reason") or "profound_insight").strip(),
+            "headline":     (p.get("hook_headline") or "Viral Moment").strip(),
+            "clip_title":   (p.get("clip_title") or "Nugget").strip(),
+        })
 
-    for i, (c_start, c_end, text) in enumerate(chunks):
-        label = f"Chunk {i + 1}/{len(chunks)} ({c_start:.0f}s–{c_end:.0f}s)"
-        logger.info(f"  {label}")
-
-        try:
-            raw_peaks = _safe_call_gemini(text, label)
-            for p in raw_peaks:
-                all_peaks.append({
-                    "start":        float(p.get("start",          c_start)),
-                    "end":          float(p.get("end",            c_end)),
-                    "gemini_score": float(p.get("virality_score", 0.5)),
-                    "reason":       str(p.get("reason",           "")),
-                    "headline":     str(p.get("hook_headline",    "")),
-                    "clip_title":   str(p.get("clip_title",       "")),
-                })
-        except Exception as exc:
-            logger.error(f"  {label} failed: {exc}")
-
-    logger.info(f"Gemini found {len(all_peaks)} candidate peaks across {len(chunks)} chunks")
+    logger.info(f"Gemini found {len(all_peaks)} candidate peaks in a single pass.")
     return all_peaks

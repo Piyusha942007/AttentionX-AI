@@ -1,17 +1,17 @@
 """
-cropper.py — MoviePy vertical crop engine for 9:16 TikTok/Reels output.
+cropper.py — FFmpeg vertical crop engine for 9:16 TikTok/Reels output.
 
-Takes a 16:9 source (1920×1080) and produces a 608×1080 MP4 where the
-crop window follows the speaker's face using per-frame offsets from
-face_tracker.detect_face_centers().
-
-Output: H.264 / AAC, 30 fps, libx264 'fast' preset (PRD spec).
+Takes a 16:9 source (1920×1080) and produces a 608×1080 MP4 using
+a static crop window based on the average face center for the segment.
+This replaces MoviePy to achieve Zero-RAM usage on Render.
 """
 from __future__ import annotations
 
 import logging
 import os
+import subprocess
 from pathlib import Path
+import cv2
 
 # Configure ffmpeg cross-platform (local .exe vs global Linux binary)
 if os.name == "nt":
@@ -20,10 +20,6 @@ if os.name == "nt":
 else:
     FFMPEG_EXE = "ffmpeg"
 
-os.environ["MOVIEPY_FFMPEG_BINARY"] = FFMPEG_EXE
-
-from moviepy import VideoFileClip
-
 from .face_tracker import CROP_W, get_crop_x
 
 logger = logging.getLogger(__name__)
@@ -31,7 +27,6 @@ logger = logging.getLogger(__name__)
 OUTPUT_DIR    = Path(os.getenv("OUTPUT_DIR", "./output_clips"))
 TARGET_HEIGHT = 1080
 TARGET_WIDTH  = CROP_W  # 608
-
 
 def make_vertical_clip(
     source_path:        str,
@@ -42,7 +37,7 @@ def make_vertical_clip(
 ) -> str:
     """
     Crop a segment of the source video to 9:16 vertical format using
-    per-frame face-tracking offsets.
+    true dynamic per-frame cropping via OpenCV and FFmpeg stdin piping.
 
     Args:
         source_path:       Local path to the full-length source video.
@@ -60,60 +55,91 @@ def make_vertical_clip(
 
     logger.info(f"Cropping clip {clip_id}: {start:.1f}s – {end:.1f}s → {output_path}")
 
-    source_clip = VideoFileClip(source_path)
-    clip        = source_clip.subclipped(start, end)
-    clip_fps    = clip.fps or 30.0
-    frame_w     = clip.w
-    frame_h     = clip.h
+    # Use cv2 to get accurate FPS and dimensions
+    cap = cv2.VideoCapture(source_path)
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    frame_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    frame_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    
+    if not fps or fps <= 0:
+        fps = 30.0
+    if not frame_h or frame_h <= 0:
+        frame_h = 1080
+    if not frame_w or frame_w <= 0:
+        frame_w = 1920
 
-    # Starting frame index in the full-video face_centers array
-    start_frame = int(start * clip_fps)
-    n_centers   = len(face_centers_full)
+    start_frame = int(start * fps)
+    end_frame = int(end * fps)
+    total_clip_frames = end_frame - start_frame
+    
+    # Target dimension
+    crop_w = int(frame_h * 9 / 16)
+    duration = end - start
 
-    # ── Per-frame crop function (called by MoviePy fl()) ──────────────────
+    # ── FFmpeg Raw Input Pipeline ──────────────────────────────────────────
+    # We pipe raw BGR bytes from cv2 into ffmpeg for extremely fast,
+    # zero-RAM encoding. We also map audio from the original file.
+    cmd = [
+        FFMPEG_EXE, "-y",
+        "-f", "rawvideo",
+        "-vcodec", "rawvideo",
+        "-s", f"{crop_w}x{frame_h}",
+        "-pix_fmt", "bgr24",
+        "-r", str(fps),
+        "-i", "-",               # Input 0: Raw video from stdin
+        "-ss", str(start),
+        "-i", source_path,       # Input 1: Original video for audio
+        "-t", str(duration),
+        "-map", "0:v:0",         # Use stdin video
+        "-map", "1:a:0?",        # Use original audio (if exists)
+        "-vf", f"scale={TARGET_WIDTH}:{TARGET_HEIGHT}",
+        "-c:v", "libx264",
+        "-preset", "ultrafast",
+        "-c:a", "aac",
+        "-threads", "2",
+        "-shortest",
+        output_path
+    ]
 
-    def crop_frame(get_frame, t: float):
-        frame = get_frame(t)
-        abs_frame_idx = start_frame + int(t * clip_fps)
-
-        # Fetch smoothed center X; fall back to frame center if out of range
-        if abs_frame_idx < n_centers:
-            cx = face_centers_full[abs_frame_idx]
-        else:
-            cx = frame_w // 2
-
-        x = get_crop_x(cx, frame_w)
-
-        # Horizontal crop to TARGET_WIDTH (608px)
-        cropped = frame[:, x: x + TARGET_WIDTH]
-
-        # Vertical crop to TARGET_HEIGHT if source is taller (rare for 1080p)
-        h = cropped.shape[0]
-        if h > TARGET_HEIGHT:
-            y0 = (h - TARGET_HEIGHT) // 2
-            cropped = cropped[y0: y0 + TARGET_HEIGHT]
-
-        return cropped
-
-    # ── Apply and export ──────────────────────────────────────────────────
-
-    vertical = clip.transform(crop_frame, apply_to="mask")
-
-    vertical.write_videofile(
-        output_path,
-        fps=30,
-        codec="libx264",
-        preset="ultrafast",
-        audio_codec="aac",
-        threads=2,
-        temp_audiofile=str(OUTPUT_DIR / f"{clip_id}_tmp_audio.m4a"),
-        remove_temp=True,
-        logger=None,   # suppress MoviePy's built-in progress bar
-    )
-
-    clip.close()
-    source_clip.close()
-    vertical.close()
+    try:
+        # Open FFmpeg subprocess (using DEVNULL for stderr to prevent OS pipe buffer deadlock)
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        
+        # Seek to start frame
+        cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+        
+        n_centers = len(face_centers_full)
+        
+        for i in range(start_frame, end_frame):
+            ret, frame = cap.read()
+            if not ret:
+                break
+                
+            # Fallback to frame center if array is short
+            cx = face_centers_full[i] if i < n_centers else (frame_w // 2)
+            x = get_crop_x(int(cx), frame_w, frame_h)
+            
+            # Dynamic crop for this exact frame
+            cropped = frame[:, x : x + crop_w]
+            
+            # Write raw bytes to FFmpeg
+            proc.stdin.write(cropped.tobytes())
+            
+        # Close stdin to signal EOF to FFmpeg
+        proc.stdin.close()
+        
+        # Wait for FFmpeg to finish encoding
+        proc.wait()
+        
+        if proc.returncode != 0:
+            logger.error(f"FFmpeg dynamic crop failed with return code {proc.returncode}")
+            raise Exception("FFmpeg failed to encode dynamic crop.")
+            
+    except Exception as e:
+        logger.error(f"Exception during dynamic crop: {e}")
+        raise
+    finally:
+        cap.release()
 
     logger.info(f"Clip exported: {output_path}")
     return output_path

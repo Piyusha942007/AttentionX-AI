@@ -46,6 +46,7 @@ async def process_job(
     cleanup_memory("Start")
 
     try:
+        import os
         # ── Step 0: Download (if YouTube) ───────────────────────────────────
         if youtube_url:
             await update_job(job_id, status="queued")
@@ -55,13 +56,13 @@ async def process_job(
             from db import upload_video_to_storage
             
             # Download to a temporary internal path
-            output_dir = str(Path("/tmp/uploads") / job_id)
+            base_dir = os.environ.get("UPLOAD_DIR", "./uploads")
+            output_dir = str(Path(base_dir) / job_id)
             meta = await _run_sync(download_youtube_video, youtube_url, output_dir)
             video_path = meta["local_path"]
             
-            # Upload the downloaded file to Supabase so it's backed up + visible in UI
-            with open(video_path, "rb") as f:
-                storage_path, video_url = await upload_video_to_storage(f.read(), meta["filename"])
+            # Upload the downloaded file to Supabase using its path
+            storage_path, video_url = await upload_video_to_storage(video_path, meta["filename"])
             
             # Update job metadata with real filename and URLs
             await update_job(
@@ -97,8 +98,8 @@ async def process_job(
             pick_top_peaks,
         )
 
-        # Run Gemini analysis and audio RMS extraction in sequence (to save RAM)
-        candidate_peaks = await _run_sync(analyze_transcript, segments)
+        # Run Gemini analysis (now async/parallel) and audio RMS extraction
+        candidate_peaks = await analyze_transcript(segments)
         cleanup_memory("After Gemini")
         
         rms_result = await _run_sync(extract_rms, video_path)
@@ -185,20 +186,11 @@ async def process_job(
                 face_centers,
             )
 
-            # 4b. Burn captions
-            captioned_path = raw_clip_path.replace(".mp4", "_captioned.mp4")
-            final_clip_path = await _run_sync(
-                burn_captions,
-                raw_clip_path,
-                peak_words,
-                peak["start"],
-                captioned_path,
-                caption_color,
-            )
-
-            # 4c. Upload
-            clip_url = await upload_clip_to_storage(final_clip_path, clip_id)
-            logger.info(f"[{job_id}] Clip {clip_num} uploaded")
+            # 4b. Upload the raw uncaptioned clip directly
+            # The frontend will overlay HTML captions for preview, and we'll burn
+            # them on demand during the final export.
+            clip_url = await upload_clip_to_storage(raw_clip_path, clip_id)
+            logger.info(f"[{job_id}] Clip {clip_num} uploaded (raw)")
 
             final_peaks.append({
                 "time":       peak["time"],

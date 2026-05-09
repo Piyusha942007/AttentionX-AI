@@ -153,7 +153,10 @@ const Dashboard = () => {
                         </section>
 
                         <section className="preview-panel animate-fade-in-up delay-4 p-8">
-                            <PreviewPane selectedPeak={selectedPeak || (job?.peaks?.[0])} />
+                            <PreviewPane 
+                                selectedPeak={selectedPeak || (job?.peaks?.[0])} 
+                                jobId={job?.job_id}
+                            />
                         </section>
                     </div>
 

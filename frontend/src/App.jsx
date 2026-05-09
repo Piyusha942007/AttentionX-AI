@@ -8,28 +8,35 @@ const STEPS = [
   { name:"Transcribing audio", engine:"Whisper" },
   { name:"Detecting emotion peaks", engine:"Librosa" },
   { name:"Analyzing with Gemini", engine:"AI Analysis" },
-  { name:"Rendering vertical clips", engine:"MoviePy" },
+  { name:"Rendering vertical clips", engine:"FFmpeg" },
+]
+
+const COLORS = [
+    { name: 'Yellow', hex: '#FFE234' },
+    { name: 'Green', hex: '#00FF00' },
+    { name: 'Cyan', hex: '#00FFFF' },
+    { name: 'Pink', hex: '#FF00FF' },
 ]
 
 /* ─── Styles ─────────────────────────────────────────────────────────────── */
 const S = {
-  shell: { display:'grid', gridTemplateColumns:'56px 320px 1fr 280px', gridTemplateRows:'52px 1fr 40px', height:'100vh', width:'100vw' },
-  topBar: { gridColumn:'1/-1', gridRow:'1', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', borderBottom:'0.5px solid #27272a', background:'#09090b' },
-  sidebar: { gridColumn:'1', gridRow:'2', display:'flex', flexDirection:'column', alignItems:'center', padding:'12px 0', borderRight:'0.5px solid #27272a', background:'#09090b' },
-  bottomBar: { gridColumn:'1/-1', gridRow:'3', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 16px', background:'#0d0d0f', borderTop:'0.5px solid #1c1c1f' },
-  panel: (extra) => ({ gridRow:'2', display:'flex', flexDirection:'column', overflow:'hidden', borderRight:'0.5px solid #27272a', ...extra }),
+  shell: { display:'grid', gridTemplateColumns:'64px 340px 1fr 300px', gridTemplateRows:'60px 1fr 48px', height:'100vh', width:'100vw' },
+  topBar: { gridColumn:'1/-1', gridRow:'1', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px', borderBottom:'1px solid var(--border-light)', background:'rgba(5, 5, 5, 0.8)', backdropFilter:'blur(12px)', zIndex:10 },
+  sidebar: { gridColumn:'1', gridRow:'2', display:'flex', flexDirection:'column', alignItems:'center', padding:'20px 0', borderRight:'1px solid var(--border-light)', background:'var(--bg-base)' },
+  bottomBar: { gridColumn:'1/-1', gridRow:'3', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px', background:'var(--bg-surface)', borderTop:'1px solid var(--border-light)', zIndex:10 },
+  panel: (extra) => ({ gridRow:'2', display:'flex', flexDirection:'column', overflow:'hidden', borderRight:'1px solid var(--border-light)', background:'rgba(10, 10, 12, 0.4)', backdropFilter:'blur(8px)', ...extra }),
 
   row: { display:'flex', flexDirection:'row', alignItems:'center' },
   col: { display:'flex', flexDirection:'column' },
-  badge: (bg, color) => ({ fontSize:10, fontWeight:500, padding:'2px 8px', borderRadius:99, background:bg, color, whiteSpace:'nowrap' }),
-  sectionLabel: { fontSize:10, fontWeight:500, letterSpacing:'0.08em', textTransform:'uppercase', color:'#52525b', padding:'16px 16px 10px' },
-  settingRow: { display:'flex', alignItems:'center', justifyContent:'space-between', height:36, borderBottom:'0.5px solid #18181b', padding:'0 16px' },
+  badge: (bg, color) => ({ fontSize:11, fontWeight:600, padding:'4px 10px', borderRadius:99, background:bg, color, whiteSpace:'nowrap', letterSpacing:'0.02em' }),
+  sectionLabel: { fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--text-muted)', padding:'24px 20px 12px', fontFamily:'"Outfit", sans-serif' },
+  settingRow: { display:'flex', alignItems:'center', justifyContent:'space-between', height:44, padding:'0 20px', transition:'background 0.2s ease' },
 }
 
 /* ─── Toggle ─────────────────────────────────────────────────────────────── */
 const Toggle = ({ on }) => (
-  <div style={{ width:28, height:16, borderRadius:99, background: on ? '#7F77DD' : '#27272a', position:'relative', flexShrink:0 }}>
-    <div style={{ width:12, height:12, borderRadius:99, background:'#fff', position:'absolute', top:2, left: on ? 14 : 2, transition:'left 150ms ease' }} />
+  <div style={{ width:32, height:18, borderRadius:99, background: on ? 'var(--accent-primary)' : 'rgba(255,255,255,0.1)', position:'relative', flexShrink:0, transition:'background 0.2s ease', boxShadow: on ? '0 0 10px var(--accent-glow)' : 'none' }}>
+    <div style={{ width:14, height:14, borderRadius:99, background:'#fff', position:'absolute', top:2, left: on ? 16 : 2, transition:'left 0.2s cubic-bezier(0.16, 1, 0.3, 1)' }} />
   </div>
 )
 
@@ -41,7 +48,9 @@ export default function App() {
   const [file, setFile] = useState(null)
   const [ytUrl, setYtUrl] = useState('')
   const [captionColor, setCaptionColor] = useState('Yellow')
+  const [selectedColor, setSelectedColor] = useState(COLORS[0])
   const [uploading, setUploading] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
   const [error, setError] = useState(null)
   const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -112,6 +121,28 @@ export default function App() {
         if (data.peaks?.length > 0) setSel(data.peaks[0])
       }
     } catch { setError('Failed to load demo setup') } finally { setUploading(false) }
+  }
+
+  const handleExport = async () => {
+    if (!job?.job_id || !sel?.clip_id) return
+    setIsExporting(true)
+    try {
+      const res = await fetch(`${API_BASE}/api/clips/${job.job_id}/${sel.clip_id}/export`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ caption_color: selectedColor.name })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        window.open(data.download_url, '_blank')
+      } else {
+        setError('Export failed')
+      }
+    } catch {
+      setError('Connection error')
+    } finally {
+      setIsExporting(false)
+    }
   }
 
   const resetAll = () => { setJob(null); setSel(null); setFile(null); setYtUrl(''); setError(null) }
@@ -293,7 +324,19 @@ export default function App() {
                 const done = i+1 < step || (step===4 && prog>=100)
                 const active = i+1 === step
                 return (
-                  <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 12px', height:40, background:'#0d0d0f', border:'0.5px solid #27272a', borderRadius:8, borderLeft: active ? '2px solid #7F77DD' : undefined }}>
+                  <div key={i} style={{ 
+                    display:'flex', 
+                    alignItems:'center', 
+                    justifyContent:'space-between', 
+                    padding:'0 12px', 
+                    height:40, 
+                    background:'#0d0d0f', 
+                    borderTop:'0.5px solid #27272a',
+                    borderRight:'0.5px solid #27272a',
+                    borderBottom:'0.5px solid #27272a',
+                    borderRadius:8, 
+                    borderLeft: active ? '2px solid #7F77DD' : '0.5px solid #27272a' 
+                  }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                       {done ? <CheckCircle2 size={14} color="#639922" /> : <Loader2 size={14} color={active ? '#EF9F27' : '#52525b'} style={active ? { animation:'spin 1s linear infinite' } : {}} />}
                       <span style={{ fontSize:12, color: done ? '#fafafa' : '#a1a1aa' }}>{st.name}</span>
@@ -409,8 +452,32 @@ export default function App() {
               <div style={{ height:'100%', aspectRatio:'9/16', background:'#0d0d0f', border:'0.5px solid #1c1c1f', borderRadius:8, position:'relative', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center' }}>
                 
                 {sel?.clip_url ? (
-                    <video src={sel.clip_url} autoPlay loop controls playsInline style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', objectFit:'cover', zIndex:5 }} />
+                    <video key={sel.clip_url} src={sel.clip_url} autoPlay loop muted playsInline style={{ position:'absolute', top:0, left:0, width:'100%', height:'100%', objectFit:'cover', zIndex:5 }} />
                 ) : null}
+
+                {/* Live Captions Overlay */}
+                {sel?.words && (
+                  <div style={{ position:'absolute', bottom:'20%', left:0, right:0, padding:'0 10px', display:'flex', flexWrap:'wrap', justifyContent:'center', gap:4, zIndex:10, pointerEvents:'none' }}>
+                    {sel.words.map((w, idx) => {
+                      const video = document.querySelector('video')
+                      const currentTime = video?.currentTime || 0
+                      const active = currentTime >= (w.start - sel.start) && currentTime <= (w.end - sel.start)
+                      return (
+                        <span key={idx} style={{ 
+                          fontSize: active ? 14 : 12, 
+                          fontWeight: 900, 
+                          color: active ? selectedColor.hex : 'rgba(255,255,255,0.6)',
+                          textTransform: 'uppercase',
+                          textShadow: '0 2px 4px rgba(0,0,0,0.8)',
+                          transform: active ? 'scale(1.1)' : 'scale(1)',
+                          transition: 'all 0.1s ease'
+                        }}>
+                          {w.word}
+                        </span>
+                      )
+                    })}
+                  </div>
+                )}
 
                 <span style={{ position:'absolute', bottom:4, left:4, zIndex:20, fontSize:7, color:'#52525b', background:'#18181b', padding:'1px 4px', borderRadius:3 }}>9:16 Output</span>
               </div>
@@ -418,23 +485,28 @@ export default function App() {
           </div>
 
           <div style={{ marginTop:'auto' }}>
-            {['Burn captions','Add hook title card'].map((l,i) => (
-                <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', height:32, borderBottom:'0.5px solid #18181b' }}>
-                <span style={{ fontSize:11, color:'#71717a' }}>{l}</span>
-                <Toggle on />
-                </div>
-            ))}
-            <button style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', height:40, background:'#534AB7', color:'#fff', fontSize:13, fontWeight:500, borderRadius:8, marginTop:12, transition:'background 120ms', opacity: isDone ? 1 : 0.5 }}
-                disabled={!isDone}
-                onMouseEnter={e => e.currentTarget.style.background='#4a41a3'}
-                onMouseLeave={e => e.currentTarget.style.background='#534AB7'}>
-                {sel?.clip_url ? (
-                    <a href={`${API_BASE}/api/clips/${sel.clip_id}/download`} style={{ color:'inherit', textDecoration:'none', display:'flex', alignItems:'center', gap:8 }} download>
-                        <DownloadCloud size={16} /> Export clip
-                    </a>
-                ) : (
-                    <><DownloadCloud size={16} /> Export clip</>
-                )}
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:16 }}>
+              <span style={{ fontSize:10, color:'#52525b', fontWeight:600, textTransform:'uppercase', letterSpacing:'0.05em' }}>Caption Style</span>
+              <div style={{ display:'flex', gap:8 }}>
+                {COLORS.map(c => (
+                  <button 
+                    key={c.name}
+                    onClick={() => { setSelectedColor(c); setCaptionColor(c.name) }}
+                    style={{ 
+                      width:24, height:24, borderRadius:99, background:c.hex, 
+                      border: selectedColor.name === c.name ? '2px solid #fff' : '2px solid transparent',
+                      boxShadow: selectedColor.name === c.name ? '0 0 10px ' + c.hex : 'none',
+                      transition: 'all 0.2s ease'
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <button onClick={handleExport} style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:8, width:'100%', height:40, background: isDone ? '#534AB7' : '#1c1c1f', color: isDone ? '#fff' : '#52525b', fontSize:13, fontWeight:500, borderRadius:8, transition:'all 200ms', cursor: isDone ? 'pointer' : 'not-allowed' }}
+                disabled={!isDone || isExporting}>
+                {isExporting ? <Loader2 size={16} className="animate-spin" /> : <DownloadCloud size={16} />} 
+                {isExporting ? 'Exporting...' : 'Export Final Clip'}
             </button>
           </div>
         </div>

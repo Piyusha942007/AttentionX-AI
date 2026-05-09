@@ -28,12 +28,13 @@ def download_youtube_video(url: str, output_dir: str) -> dict:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     
     ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+        'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best',
         'outtmpl': os.path.join(output_dir, '%(id)s.%(ext)s'),
         'noplaylist': True,
         'quiet': True,
         'no_warnings': True,
         'retries': 15,
+        'nocheckcertificate': True,
         'socket_timeout': 60,
     }
     

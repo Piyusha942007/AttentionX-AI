@@ -37,7 +37,12 @@ class YouTubeJobRequest(BaseModel):
     url: str
     caption_color: str = "Yellow"
 
+class ExportClipRequest(BaseModel):
+    caption_color: str = "Yellow"
+
 from worker import process_job
+from services.captioner import burn_captions
+from services.memory import cleanup_memory
 
 load_dotenv()
 
@@ -99,18 +104,17 @@ async def create_job_endpoint(
     """
     job_id = str(uuid.uuid4())
 
-    # 1. Read bytes from multipart upload
-    file_bytes = await file.read()
-    logger.info(f"Received upload: {file.filename} ({len(file_bytes):,} bytes)")
-
-    # 2. Upload source video to Supabase Storage (private bucket)
-    storage_path, video_url = await upload_video_to_storage(file_bytes, file.filename)
-
-    # 3. Also save locally so the worker can access it immediately
-    #    (avoids an extra download round-trip for the first run)
+    # 1. Stream file directly to local disk (Zero-RAM mode)
     local_path = UPLOAD_DIR / f"{job_id}{Path(file.filename).suffix}"
+    
     with open(local_path, "wb") as f:
-        f.write(file_bytes)
+        while chunk := await file.read(1024 * 1024):  # 1MB chunks
+            f.write(chunk)
+            
+    logger.info(f"Received upload and saved to: {local_path}")
+
+    # 2. Upload source video to Supabase Storage using the local path
+    storage_path, video_url = await upload_video_to_storage(str(local_path), file.filename)
 
     # 4. Create job row in Supabase Postgres
     await create_job(
@@ -240,6 +244,84 @@ async def download_clip(clip_id: str):
     if not clip_url:
         raise HTTPException(status_code=404, detail=f"Clip '{clip_id}' not found")
     return RedirectResponse(url=clip_url, status_code=302)
+
+
+@app.post("/api/clips/{job_id}/{clip_id}/export")
+async def export_clip_endpoint(
+    job_id: str,
+    clip_id: str,
+    request: ExportClipRequest,
+):
+    """
+    Render a final version of a clip with burned-in captions in a specific color.
+    
+    1. Fetch job to get words for this clip
+    2. Download raw vertical clip from Supabase
+    3. Burn captions
+    4. Upload final version
+    5. Return public URL
+    """
+    # 1. Fetch job
+    job = await get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    
+    # Find the specific peak/clip
+    peaks = job.get("peaks") or []
+    target_peak = next((p for p in peaks if p.get("clip_id") == clip_id), None)
+    if not target_peak:
+        raise HTTPException(status_code=404, detail="Clip not found in job")
+    
+    # 2. Download raw clip
+    # (Using a temp directory for processing)
+    temp_dir = UPLOAD_DIR / "exports" / job_id
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    
+    raw_clip_name = f"{clip_id}_raw.mp4"
+    local_raw_path = temp_dir / raw_clip_name
+    
+    # We need a way to download from CLIPS_BUCKET
+    from db import _get_client, _run, CLIPS_BUCKET, upload_clip_to_storage
+    
+    def _download_raw():
+        return _get_client().storage.from_(CLIPS_BUCKET).download(f"{clip_id}.mp4")
+    
+    try:
+        file_bytes = await _run(_download_raw)
+        with open(local_raw_path, "wb") as f:
+            f.write(file_bytes)
+            
+        # 3. Burn captions
+        output_name = f"{clip_id}_final_{request.caption_color}.mp4"
+        local_output_path = temp_dir / output_name
+        
+        final_path = await asyncio.to_thread(
+            burn_captions,
+            str(local_raw_path),
+            target_peak["words"],
+            target_peak["start"],
+            str(local_output_path),
+            request.caption_color
+        )
+        
+        # 4. Upload final version
+        # Use a new ID for the final version to avoid overwriting the raw preview
+        final_id = f"{clip_id}_{request.caption_color.lower()}"
+        final_url = await upload_clip_to_storage(final_path, final_id)
+        
+        # Cleanup
+        cleanup_memory("Export Finish")
+        try:
+            os.remove(local_raw_path)
+            os.remove(local_output_path)
+        except:
+            pass
+            
+        return {"download_url": final_url}
+        
+    except Exception as e:
+        logger.error(f"Export failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -201,11 +201,11 @@ async def update_job(job_id: str, **kwargs: Any) -> dict[str, Any]:
 # ─────────────────────────────────────────────────────────────────────────────
 
 async def upload_video_to_storage(
-    file_bytes: bytes,
+    file_path_or_bytes: str | bytes,
     original_filename: str,
 ) -> tuple[str, str]:
     """
-    Upload raw video bytes to the ``attentionx-videos`` bucket.
+    Upload video to the ``attentionx-videos`` bucket.
 
     The file is stored under a unique prefix to avoid collisions.
     The bucket is private, so the returned "public URL" is actually a
@@ -213,7 +213,7 @@ async def upload_video_to_storage(
     dashboard if you want direct browser access.
 
     Args:
-        file_bytes:        Raw bytes of the uploaded video.
+        file_path_or_bytes: Local file path string or raw bytes of the uploaded video.
         original_filename: Original filename (e.g. "lecture.mp4").
 
     Returns:
@@ -230,16 +230,18 @@ async def upload_video_to_storage(
         client = _get_client()
         client.storage.from_(VIDEOS_BUCKET).upload(
             path=storage_path,
-            file=file_bytes,
+            file=file_path_or_bytes,
             file_options={
                 "content-type": "video/mp4",
                 "upsert": "true",
             },
         )
-        return client.storage.from_(VIDEOS_BUCKET).get_public_url(storage_path)
+        # Generate a signed URL valid for 24 hours to bypass 'No API key' errors
+        res = client.storage.from_(VIDEOS_BUCKET).create_signed_url(storage_path, expires_in=86400)
+        return res["signedURL"]
 
     public_url: str = await _run(_upload)
-    logger.info(f"Video uploaded → {storage_path} ({len(file_bytes):,} bytes)")
+    logger.info(f"Video uploaded → {storage_path}")
     return storage_path, public_url
 
 
@@ -294,23 +296,22 @@ async def upload_clip_to_storage(
     """
     storage_path = f"{clip_id}.mp4"
 
-    with open(local_clip_path, "rb") as f:
-        file_bytes = f.read()
-
     def _upload():
         client = _get_client()
         client.storage.from_(CLIPS_BUCKET).upload(
             path=storage_path,
-            file=file_bytes,
+            file=local_clip_path,
             file_options={
                 "content-type": "video/mp4",
                 "upsert": "true",
             },
         )
-        return client.storage.from_(CLIPS_BUCKET).get_public_url(storage_path)
+        # Generate a signed URL valid for 24 hours to bypass 'No API key' errors
+        res = client.storage.from_(CLIPS_BUCKET).create_signed_url(storage_path, expires_in=86400)
+        return res["signedURL"]
 
     public_url: str = await _run(_upload)
-    logger.info(f"Clip uploaded → {storage_path} ({len(file_bytes):,} bytes)")
+    logger.info(f"Clip uploaded → {storage_path}")
     return public_url
 
 
